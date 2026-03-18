@@ -34,16 +34,8 @@
         z-index: 10;
       }
 
-      header a {
-        color: #5b6af0;
-        text-decoration: none;
-        font-size: 0.85rem;
-      }
-
-      header h2 {
-        font-size: 1rem;
-        font-weight: 600;
-      }
+      header a { color: #5b6af0; text-decoration: none; font-size: 0.85rem; }
+      header h2 { font-size: 1rem; font-weight: 600; }
 
       #status {
         font-size: 0.8rem;
@@ -52,37 +44,24 @@
         background: #2a2a38;
         color: #888;
       }
-
-      #status.connected {
-        background: #1a3320;
-        color: #4ade80;
-      }
+      #status.connected { background: #1a3320; color: #4ade80; }
 
       .joystick-row {
         flex: 1;
         display: flex;
       }
 
+      /* ── shared panel ── */
       .joystick-panel {
         flex: 1;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 12px;
+        gap: 14px;
         position: relative;
       }
-
-      .joystick-panel:first-child {
-        border-right: 1px solid #2a2a38;
-      }
-
-      .zone {
-        width: 200px;
-        height: 200px;
-        position: relative;
-        flex-shrink: 0;
-      }
+      .joystick-panel:first-child { border-right: 1px solid #2a2a38; }
 
       .panel-label {
         font-size: 0.75rem;
@@ -90,6 +69,21 @@
         text-transform: uppercase;
         letter-spacing: 0.1em;
         color: #5b6af0;
+      }
+
+      .coords {
+        font-size: 0.78rem;
+        color: #444;
+        font-variant-numeric: tabular-nums;
+        min-height: 1.2em;
+      }
+
+      /* ── left: nipplejs zone ── */
+      #zone-left {
+        width: 200px;
+        height: 200px;
+        position: relative;
+        flex-shrink: 0;
       }
 
       .legend {
@@ -100,20 +94,56 @@
         color: #555;
         text-align: center;
       }
-
       .legend span { color: #888; }
 
-      .coords {
-        font-size: 0.78rem;
-        color: #444;
-        font-variant-numeric: tabular-nums;
-        min-height: 1.2em;
+      /* ── right: D-pad ── */
+      .dpad {
+        display: grid;
+        grid-template-areas:
+          ". up ."
+          "left . right"
+          ". down .";
+        grid-template-columns: 64px 64px 64px;
+        grid-template-rows: 64px 64px 64px;
+        gap: 6px;
+      }
+
+      .dpad-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #1e1e2e;
+        border: 2px solid #2a2a3e;
+        border-radius: 12px;
+        color: #aaa;
+        font-size: 1.5rem;
+        cursor: pointer;
+        transition: background 0.08s, border-color 0.08s, color 0.08s, transform 0.08s;
+        -webkit-tap-highlight-color: transparent;
+        outline: none;
+      }
+      .dpad-btn.up    { grid-area: up; }
+      .dpad-btn.down  { grid-area: down; }
+      .dpad-btn.left  { grid-area: left; }
+      .dpad-btn.right { grid-area: right; }
+
+      .dpad-btn.active,
+      .dpad-btn:active {
+        background: #2a2d5a;
+        border-color: #5b6af0;
+        color: #fff;
+        transform: scale(0.93);
+      }
+
+      .dpad-hint {
+        font-size: 0.7rem;
+        color: #3a3a50;
+        text-align: center;
+        line-height: 1.6;
       }
 
       /* Nipplejs overrides */
-      .nipple .front {
-        background: #5b6af0 !important;
-      }
+      .nipple .front { background: #5b6af0 !important; }
       .nipple .back {
         background: rgba(91, 106, 240, 0.12) !important;
         border: 2px solid rgba(91, 106, 240, 0.35) !important;
@@ -123,33 +153,40 @@
   <body>
     <header>
       <a href="/">← Home</a>
-      <h2>🕹️ Dual Joystick</h2>
+      <h2>🕹️ Dual Control</h2>
       <span id="status">Connecting…</span>
     </header>
 
     <div class="joystick-row">
 
-      <!-- LEFT: movement -->
+      <!-- LEFT: analog joystick — movement -->
       <div class="joystick-panel">
         <span class="panel-label">Move</span>
         <div class="legend">
-          <span></span>       <span>↑ Forward</span>
-          <span>← Left</span> <span>Right →</span>
-          <span></span>       <span>↓ Back</span>
+          <span></span>        <span>↑ Forward</span>
+          <span>← Left</span>  <span>Right →</span>
+          <span></span>        <span>↓ Back</span>
         </div>
-        <div class="zone" id="zone-left"></div>
+        <div id="zone-left"></div>
         <div class="coords" id="coords-left">x: 0.00 &nbsp; y: 0.00</div>
       </div>
 
-      <!-- RIGHT: look / elevation / rotation -->
+      <!-- RIGHT: D-pad — up/down/rotate -->
       <div class="joystick-panel">
         <span class="panel-label">Look</span>
-        <div class="legend">
-          <span></span>       <span>↑ Up</span>
-          <span>↺ CCW</span>  <span>CW ↻</span>
-          <span></span>       <span>↓ Down</span>
+
+        <div class="dpad">
+          <button class="dpad-btn up"    id="btn-up"    data-axis="y" data-val="1">↑</button>
+          <button class="dpad-btn left"  id="btn-left"  data-axis="x" data-val="-1">↺</button>
+          <button class="dpad-btn right" id="btn-right" data-axis="x" data-val="1">↻</button>
+          <button class="dpad-btn down"  id="btn-down"  data-axis="y" data-val="-1">↓</button>
         </div>
-        <div class="zone" id="zone-right"></div>
+
+        <div class="dpad-hint">
+          ↑ Up &nbsp;·&nbsp; ↓ Down<br>
+          ↺ Rotate CCW &nbsp;·&nbsp; ↻ Rotate CW<br>
+          <span style="color:#2a2a40">also: keyboard arrow keys</span>
+        </div>
         <div class="coords" id="coords-right">x: 0.00 &nbsp; y: 0.00</div>
       </div>
 
