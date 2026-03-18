@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Joystick — Remote Controller</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        background: #0f0f13;
+        color: #e0e0e0;
+        height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 24px;
+        touch-action: none;
+        user-select: none;
+      }
+
+      header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 24px;
+        background: #1a1a24;
+        border-bottom: 1px solid #2a2a38;
+      }
+
+      header a {
+        color: #5b6af0;
+        text-decoration: none;
+        font-size: 0.85rem;
+      }
+
+      header h2 {
+        font-size: 1rem;
+        font-weight: 600;
+      }
+
+      #status {
+        font-size: 0.8rem;
+        padding: 4px 10px;
+        border-radius: 20px;
+        background: #2a2a38;
+        color: #888;
+      }
+
+      #status.connected {
+        background: #1a3320;
+        color: #4ade80;
+      }
+
+      #zone {
+        width: 220px;
+        height: 220px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      #coords {
+        font-size: 0.85rem;
+        color: #555;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.03em;
+      }
+
+      /* Style the nipplejs joystick via its wrapper */
+      .nipple .front {
+        background: #5b6af0 !important;
+      }
+
+      .nipple .back {
+        background: rgba(91, 106, 240, 0.15) !important;
+        border: 2px solid rgba(91, 106, 240, 0.4) !important;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="/">← Home</a>
+      <h2>🕹️ Joystick</h2>
+      <span id="status">Connecting…</span>
+    </header>
+
+    <div id="zone"></div>
+    <div id="coords">x: 0.00 &nbsp; y: 0.00</div>
+
+    <script type="module" src="/src/joystick.js"></script>
+  </body>
+</html>
