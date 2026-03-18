@@ -34,6 +34,10 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('dot-move', data)
   })
 
+  socket.on('fire', () => {
+    socket.broadcast.emit('fire')
+  })
+
   socket.on('disconnect', () => {
     console.log(`[-] Client disconnected: ${socket.id}`)
   })

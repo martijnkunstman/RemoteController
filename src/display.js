@@ -88,6 +88,41 @@ glow.specular   = new Color3(0.3, 0.4, 0.9)
 glow.intensity  = 2.5
 glow.range      = 6
 
+// ─── Bullet system ────────────────────────────────────────────────────────────
+const BULLET_SPEED  = 18   // units per second
+const MAX_BULLETS   = 30
+
+// Shared red material for all bullets
+const bulletMat = new StandardMaterial('bulletMat', scene)
+bulletMat.diffuseColor  = new Color3(1, 0.12, 0.12)
+bulletMat.emissiveColor = new Color3(0.9, 0.05, 0.05)
+bulletMat.specularColor = new Color3(1, 0.4, 0.4)
+
+// bullets: Array<{ mesh: Mesh, vx: number, vz: number }>
+const bullets = []
+
+function spawnBullet() {
+  if (bullets.length >= MAX_BULLETS) {
+    // recycle oldest
+    const old = bullets.shift()
+    old.mesh.dispose()
+  }
+
+  const mesh = MeshBuilder.CreateSphere('bullet', { diameter: 0.28, segments: 5 }, scene)
+  mesh.material = bulletMat
+  mesh.isPickable = false
+
+  // Start at pyramid tip (1.1 units ahead of pivot center)
+  const tipDist = 1.1
+  mesh.position.set(
+    pivot.position.x + Math.sin(state.yaw) * tipDist,
+    pivot.position.y,
+    pivot.position.z + Math.cos(state.yaw) * tipDist,
+  )
+
+  bullets.push({ mesh, vx: Math.sin(state.yaw), vz: Math.cos(state.yaw) })
+}
+
 // ─── 3D state ─────────────────────────────────────────────────────────────────
 // Position in world units; yaw in radians (Babylon left-handed: +Y rot = CW from above)
 const state = { x: 0, y: 0, z: 0, yaw: 0 }
@@ -126,6 +161,20 @@ engine.runRenderLoop(() => {
   pivot.rotation.y = state.yaw
   glow.position.copyFrom(pivot.position)
 
+  // Update bullets
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i]
+    b.mesh.position.x += b.vx * BULLET_SPEED * dt
+    b.mesh.position.z += b.vz * BULLET_SPEED * dt
+
+    // Remove when outside arena box
+    const p = b.mesh.position
+    if (Math.abs(p.x) > HALF || Math.abs(p.y) > HALF || Math.abs(p.z) > HALF) {
+      b.mesh.dispose()
+      bullets.splice(i, 1)
+    }
+  }
+
   scene.render()
 })
 
@@ -147,4 +196,8 @@ socket.on('disconnect', () => {
 
 socket.on('dot-move', (data) => {
   input = data
+})
+
+socket.on('fire', () => {
+  spawnBullet()
 })

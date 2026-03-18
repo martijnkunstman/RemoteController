@@ -5,11 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>Joystick — Remote Controller</title>
     <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
 
       body {
         font-family: 'Segoe UI', system-ui, sans-serif;
@@ -33,7 +29,6 @@
         flex-shrink: 0;
         z-index: 10;
       }
-
       header a { color: #5b6af0; text-decoration: none; font-size: 0.85rem; }
       header h2 { font-size: 1rem; font-weight: 600; }
 
@@ -46,12 +41,13 @@
       }
       #status.connected { background: #1a3320; color: #4ade80; }
 
-      .joystick-row {
+      /* ── three-column layout ── */
+      .controls-row {
         flex: 1;
         display: flex;
+        align-items: stretch;
       }
 
-      /* ── shared panel ── */
       .joystick-panel {
         flex: 1;
         display: flex;
@@ -59,9 +55,9 @@
         align-items: center;
         justify-content: center;
         gap: 14px;
-        position: relative;
       }
       .joystick-panel:first-child { border-right: 1px solid #2a2a38; }
+      .joystick-panel:last-child  { border-left:  1px solid #2a2a38; }
 
       .panel-label {
         font-size: 0.75rem;
@@ -96,6 +92,59 @@
       }
       .legend span { color: #888; }
 
+      /* ── center: fire button ── */
+      .fire-panel {
+        width: 110px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+      }
+
+      #btn-fire {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        border: 3px solid #7a1a1a;
+        background: radial-gradient(circle at 38% 38%, #c0392b, #7a0e0e);
+        box-shadow:
+          0 0 18px rgba(220, 50, 50, 0.35),
+          inset 0 2px 4px rgba(255,255,255,0.12);
+        cursor: pointer;
+        outline: none;
+        -webkit-tap-highlight-color: transparent;
+        transition: transform 0.07s, box-shadow 0.07s, background 0.07s;
+        font-size: 1.4rem;
+        color: rgba(255,255,255,0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      #btn-fire.active {
+        transform: scale(0.88);
+        background: radial-gradient(circle at 38% 38%, #ff6b6b, #c0392b);
+        box-shadow:
+          0 0 32px rgba(255, 80, 80, 0.75),
+          0 0 60px rgba(255, 60, 60, 0.35),
+          inset 0 2px 4px rgba(255,255,255,0.2);
+      }
+
+      .fire-label {
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #7a1a1a;
+      }
+      .fire-hint {
+        font-size: 0.65rem;
+        color: #2a2a3a;
+        text-align: center;
+        line-height: 1.5;
+      }
+
       /* ── right: D-pad ── */
       .dpad {
         display: grid;
@@ -118,17 +167,15 @@
         color: #aaa;
         font-size: 1.5rem;
         cursor: pointer;
+        outline: none;
         transition: background 0.08s, border-color 0.08s, color 0.08s, transform 0.08s;
         -webkit-tap-highlight-color: transparent;
-        outline: none;
       }
       .dpad-btn.up    { grid-area: up; }
       .dpad-btn.down  { grid-area: down; }
       .dpad-btn.left  { grid-area: left; }
       .dpad-btn.right { grid-area: right; }
-
-      .dpad-btn.active,
-      .dpad-btn:active {
+      .dpad-btn.active {
         background: #2a2d5a;
         border-color: #5b6af0;
         color: #fff;
@@ -142,11 +189,11 @@
         line-height: 1.6;
       }
 
-      /* Nipplejs overrides */
+      /* nipplejs overrides */
       .nipple .front { background: #5b6af0 !important; }
       .nipple .back {
-        background: rgba(91, 106, 240, 0.12) !important;
-        border: 2px solid rgba(91, 106, 240, 0.35) !important;
+        background: rgba(91,106,240,0.12) !important;
+        border: 2px solid rgba(91,106,240,0.35) !important;
       }
     </style>
   </head>
@@ -157,7 +204,7 @@
       <span id="status">Connecting…</span>
     </header>
 
-    <div class="joystick-row">
+    <div class="controls-row">
 
       <!-- LEFT: analog joystick — movement -->
       <div class="joystick-panel">
@@ -171,21 +218,25 @@
         <div class="coords" id="coords-left">x: 0.00 &nbsp; y: 0.00</div>
       </div>
 
+      <!-- CENTER: fire button -->
+      <div class="fire-panel">
+        <span class="fire-label">Fire</span>
+        <button id="btn-fire">🔴</button>
+        <span class="fire-hint">hold to<br>rapid fire<br><span style="color:#1e1e2e">space</span></span>
+      </div>
+
       <!-- RIGHT: D-pad — up/down/rotate -->
       <div class="joystick-panel">
         <span class="panel-label">Look</span>
-
         <div class="dpad">
-          <button class="dpad-btn up"    id="btn-up"    data-axis="y" data-val="1">↑</button>
-          <button class="dpad-btn left"  id="btn-left"  data-axis="x" data-val="-1">↺</button>
-          <button class="dpad-btn right" id="btn-right" data-axis="x" data-val="1">↻</button>
-          <button class="dpad-btn down"  id="btn-down"  data-axis="y" data-val="-1">↓</button>
+          <button class="dpad-btn up"    id="btn-up">↑</button>
+          <button class="dpad-btn left"  id="btn-left">↺</button>
+          <button class="dpad-btn right" id="btn-right">↻</button>
+          <button class="dpad-btn down"  id="btn-down">↓</button>
         </div>
-
         <div class="dpad-hint">
           ↑ Up &nbsp;·&nbsp; ↓ Down<br>
-          ↺ Rotate CCW &nbsp;·&nbsp; ↻ Rotate CW<br>
-          <span style="color:#2a2a40">also: keyboard arrow keys</span>
+          ↺ CCW &nbsp;·&nbsp; ↻ CW
         </div>
         <div class="coords" id="coords-right">x: 0.00 &nbsp; y: 0.00</div>
       </div>
