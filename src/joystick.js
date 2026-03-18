@@ -2,12 +2,7 @@ import { io } from 'socket.io-client'
 import nipplejs from 'nipplejs'
 
 const statusEl = document.getElementById('status')
-const coordsEl = document.getElementById('coords')
-const zoneEl = document.getElementById('zone')
 
-// --- Socket.IO ---
-// Connecting without a URL works in both dev (Vite proxies /socket.io → Express)
-// and in production (Express serves everything on the same origin).
 const socket = io()
 
 socket.on('connect', () => {
@@ -20,29 +15,60 @@ socket.on('disconnect', () => {
   statusEl.classList.remove('connected')
 })
 
-// --- Nipplejs joystick ---
-const joystick = nipplejs.create({
-  zone: zoneEl,
-  mode: 'static',
-  position: { left: '50%', top: '50%' },
-  color: '#5b6af0',
-  size: 180,
-  restJoystick: true,
-})
+let moveInput = { x: 0, y: 0 }
+let lookInput = { x: 0, y: 0 }
 
-joystick.on('move', (_event, data) => {
-  const angle = data.angle.radian
-  const force = Math.min(data.force, 1) // clamp to 0..1
+function emit() {
+  socket.emit('joystick-move', { move: moveInput, look: lookInput })
+}
 
-  // Convert polar → normalized cartesian (-1..1)
-  const x = +(Math.cos(angle) * force).toFixed(3)
-  const y = +(Math.sin(angle) * force).toFixed(3)
+function polarToCartesian(angle, force) {
+  const f = Math.min(force, 1)
+  return {
+    x: +(Math.cos(angle) * f).toFixed(3),
+    y: +(Math.sin(angle) * f).toFixed(3),
+  }
+}
 
-  coordsEl.innerHTML = `x: ${x.toFixed(2)} &nbsp; y: ${y.toFixed(2)}`
-  socket.emit('joystick-move', { x, y })
-})
+function createStick(zoneId, coordsId, onMove, onEnd) {
+  const zone = document.getElementById(zoneId)
+  const coordsEl = document.getElementById(coordsId)
 
-joystick.on('end', () => {
-  coordsEl.innerHTML = `x: 0.00 &nbsp; y: 0.00`
-  socket.emit('joystick-move', { x: 0, y: 0 })
-})
+  const stick = nipplejs.create({
+    zone,
+    mode: 'static',
+    position: { left: '50%', top: '50%' },
+    color: '#5b6af0',
+    size: 150,
+    restJoystick: true,
+  })
+
+  stick.on('move', (_e, data) => {
+    const { x, y } = polarToCartesian(data.angle.radian, data.force)
+    coordsEl.innerHTML = `x: ${x.toFixed(2)} &nbsp; y: ${y.toFixed(2)}`
+    onMove(x, y)
+    emit()
+  })
+
+  stick.on('end', () => {
+    coordsEl.innerHTML = `x: 0.00 &nbsp; y: 0.00`
+    onEnd()
+    emit()
+  })
+
+  return stick
+}
+
+// Left joystick — forward/back/left/right (horizontal plane)
+createStick(
+  'zone-left', 'coords-left',
+  (x, y) => { moveInput = { x, y } },
+  ()      => { moveInput = { x: 0, y: 0 } },
+)
+
+// Right joystick — up/down + yaw CW/CCW
+createStick(
+  'zone-right', 'coords-right',
+  (x, y) => { lookInput = { x, y } },
+  ()      => { lookInput = { x: 0, y: 0 } },
+)

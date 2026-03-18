@@ -18,24 +18,20 @@
         height: 100dvh;
         display: flex;
         flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 24px;
         touch-action: none;
         user-select: none;
+        overflow: hidden;
       }
 
       header {
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 16px 24px;
+        padding: 12px 20px;
         background: #1a1a24;
         border-bottom: 1px solid #2a2a38;
+        flex-shrink: 0;
+        z-index: 10;
       }
 
       header a {
@@ -62,41 +58,102 @@
         color: #4ade80;
       }
 
-      #zone {
-        width: 220px;
-        height: 220px;
+      .joystick-row {
+        flex: 1;
         display: flex;
+      }
+
+      .joystick-panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
+        gap: 12px;
+        position: relative;
       }
 
-      #coords {
-        font-size: 0.85rem;
+      .joystick-panel:first-child {
+        border-right: 1px solid #2a2a38;
+      }
+
+      .zone {
+        width: 200px;
+        height: 200px;
+        position: relative;
+        flex-shrink: 0;
+      }
+
+      .panel-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #5b6af0;
+      }
+
+      .legend {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px 16px;
+        font-size: 0.72rem;
         color: #555;
-        font-variant-numeric: tabular-nums;
-        letter-spacing: 0.03em;
+        text-align: center;
       }
 
-      /* Style the nipplejs joystick via its wrapper */
+      .legend span { color: #888; }
+
+      .coords {
+        font-size: 0.78rem;
+        color: #444;
+        font-variant-numeric: tabular-nums;
+        min-height: 1.2em;
+      }
+
+      /* Nipplejs overrides */
       .nipple .front {
         background: #5b6af0 !important;
       }
-
       .nipple .back {
-        background: rgba(91, 106, 240, 0.15) !important;
-        border: 2px solid rgba(91, 106, 240, 0.4) !important;
+        background: rgba(91, 106, 240, 0.12) !important;
+        border: 2px solid rgba(91, 106, 240, 0.35) !important;
       }
     </style>
   </head>
   <body>
     <header>
       <a href="/">← Home</a>
-      <h2>🕹️ Joystick</h2>
+      <h2>🕹️ Dual Joystick</h2>
       <span id="status">Connecting…</span>
     </header>
 
-    <div id="zone"></div>
-    <div id="coords">x: 0.00 &nbsp; y: 0.00</div>
+    <div class="joystick-row">
+
+      <!-- LEFT: movement -->
+      <div class="joystick-panel">
+        <span class="panel-label">Move</span>
+        <div class="legend">
+          <span></span>       <span>↑ Forward</span>
+          <span>← Left</span> <span>Right →</span>
+          <span></span>       <span>↓ Back</span>
+        </div>
+        <div class="zone" id="zone-left"></div>
+        <div class="coords" id="coords-left">x: 0.00 &nbsp; y: 0.00</div>
+      </div>
+
+      <!-- RIGHT: look / elevation / rotation -->
+      <div class="joystick-panel">
+        <span class="panel-label">Look</span>
+        <div class="legend">
+          <span></span>       <span>↑ Up</span>
+          <span>↺ CCW</span>  <span>CW ↻</span>
+          <span></span>       <span>↓ Down</span>
+        </div>
+        <div class="zone" id="zone-right"></div>
+        <div class="coords" id="coords-right">x: 0.00 &nbsp; y: 0.00</div>
+      </div>
+
+    </div>
 
     <script type="module" src="/src/joystick.js"></script>
   </body>

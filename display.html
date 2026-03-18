@@ -25,7 +25,7 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 16px 24px;
+        padding: 12px 20px;
         background: #1a1a24;
         border-bottom: 1px solid #2a2a38;
         flex-shrink: 0;
@@ -55,58 +55,22 @@
         color: #4ade80;
       }
 
-      #arena {
+      #renderCanvas {
         flex: 1;
-        position: relative;
-        overflow: hidden;
-        background:
-          radial-gradient(ellipse at center, #1a1a2e 0%, #0f0f13 100%);
-      }
-
-      /* Subtle grid lines */
-      #arena::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background-image:
-          linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
-        background-size: 40px 40px;
-      }
-
-      #dot {
-        position: absolute;
-        width: 36px;
-        height: 36px;
-        border-radius: 50%;
-        background: #5b6af0;
-        box-shadow: 0 0 20px rgba(91, 106, 240, 0.6), 0 0 40px rgba(91, 106, 240, 0.2);
-        transform: translate(-50%, -50%);
-        transition: left 0.05s linear, top 0.05s linear;
-        will-change: left, top;
-      }
-
-      #coords-display {
-        position: absolute;
-        bottom: 16px;
-        right: 16px;
-        font-size: 0.78rem;
-        color: #444;
-        font-variant-numeric: tabular-nums;
+        width: 100%;
+        display: block;
+        outline: none;
       }
     </style>
   </head>
   <body>
     <header>
       <a href="/">← Home</a>
-      <h2>🎯 Display</h2>
+      <h2>🎯 3D Display</h2>
       <span id="status">Connecting…</span>
     </header>
 
-    <div id="arena">
-      <div id="dot"></div>
-      <div id="coords-display">x: 0.00 &nbsp; y: 0.00</div>
-    </div>
+    <canvas id="renderCanvas" touch-action="none"></canvas>
 
     <script type="module" src="/src/display.js"></script>
   </body>
