@@ -28,6 +28,7 @@ scene.clearColor = new Color4(0.03, 0.04, 0.07, 1)
 // ─── Camera ───────────────────────────────────────────────────────────────────
 const camera = new FreeCamera('fpv', new Vector3(0, 0, -1), scene)
 camera.minZ = 0.1
+camera.fov  = 1.4   // ~80°, wider than default (~45°)
 
 // ─── Lighting ─────────────────────────────────────────────────────────────────
 const hemi = new HemisphericLight('hemi', new Vector3(0, 1, 0), scene)
@@ -206,6 +207,35 @@ function palette(id) { return PALETTE[(id - 1) % PALETTE.length] }
 // ─── Vehicle management ────────────────────────────────────────────────────────
 const BULLET_SPEED = 18
 const MAX_BULLETS  = 30
+const BULLET_R     = 0.14
+
+const BPILLAR_BUMP = 1.5 + BULLET_R
+const BPILLAR_POS  = [[14, 14], [14, -14], [-14, 14], [-14, -14]]
+const BTOWER_Y_MIN = -HALF
+const BTOWER_Y_MAX = -HALF + 9
+const BTOWER_BOXES = [
+  { xMin: -7,    xMax: 7,    zMin: -0.75, zMax: 0.75 },
+  { xMin: -0.75, xMax: 0.75, zMin: -7,    zMax: 7    },
+]
+
+const bulletMat = new StandardMaterial('bulletMat', scene)
+bulletMat.diffuseColor  = new Color3(1, 0.08, 0.08)
+bulletMat.emissiveColor = new Color3(1, 0,    0)
+bulletMat.specularColor = new Color3(1, 0.4,  0.4)
+
+function bulletHitsWorld(p) {
+  for (const [px, pz] of BPILLAR_POS) {
+    const dx = p.x - px, dz = p.z - pz
+    if (Math.sqrt(dx * dx + dz * dz) < BPILLAR_BUMP) return true
+  }
+  if (p.y >= BTOWER_Y_MIN && p.y <= BTOWER_Y_MAX) {
+    for (const box of BTOWER_BOXES) {
+      if (p.x > box.xMin - BULLET_R && p.x < box.xMax + BULLET_R &&
+          p.z > box.zMin - BULLET_R && p.z < box.zMax + BULLET_R) return true
+    }
+  }
+  return false
+}
 
 const vehicles = new Map()
 
@@ -237,17 +267,13 @@ function createVehicle(id) {
   glow.intensity = 3.0
   glow.range     = 10
 
-  const bulletMat = new StandardMaterial(`bmat-${id}`, scene)
-  bulletMat.diffuseColor  = new Color3(...col.d)
-  bulletMat.emissiveColor = new Color3(...col.d)
-
   const bullets = []
 
-  return { pivot, pyramid, mat, glow, bulletMat, state, bullets }
+  return { pivot, pyramid, mat, glow, state, bullets }
 }
 
 function spawnBullet(vehicle) {
-  const { bullets, bulletMat, pivot, state } = vehicle
+  const { bullets, pivot, state } = vehicle
   if (bullets.length >= MAX_BULLETS) {
     bullets.shift().mesh.dispose()
   }
@@ -270,7 +296,6 @@ function removeVehicle(id) {
   v.pivot.dispose()
   v.glow.dispose()
   v.mat.dispose()
-  v.bulletMat.dispose()
   v.bullets.forEach(b => b.mesh.dispose())
   vehicles.delete(id)
 }
@@ -288,12 +313,23 @@ engine.runRenderLoop(() => {
 
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i]
+
+      if (b.hitTimer !== undefined) {
+        b.hitTimer -= dt
+        if (b.hitTimer <= 0) { b.mesh.dispose(); bullets.splice(i, 1) }
+        continue
+      }
+
       b.mesh.position.x += b.vx * BULLET_SPEED * dt
       b.mesh.position.z += b.vz * BULLET_SPEED * dt
       const p = b.mesh.position
-      if (Math.abs(p.x) > HALF || Math.abs(p.y) > HALF || Math.abs(p.z) > HALF) {
-        b.mesh.dispose()
-        bullets.splice(i, 1)
+
+      if (Math.abs(p.y) > HALF) { b.mesh.dispose(); bullets.splice(i, 1); continue }
+
+      if (Math.abs(p.x) >= HALF || Math.abs(p.z) >= HALF || bulletHitsWorld(p)) {
+        b.hitTimer = 0.12
+        b.mesh.scaling.setAll(3)
+        continue
       }
     }
   }

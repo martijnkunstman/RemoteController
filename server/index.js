@@ -41,6 +41,49 @@ const PALETTE_SIZE = 8
 const vehicleStates = new Map()   // joystickId → {x, y, z, yaw}
 const vehicleInputs = new Map()   // joystickId → {moveX, moveY, lookX, lookY}
 
+// ─── Collision geometry (must match firstpersonview.js / display.js) ──────────
+const VEHICLE_R    = 0.8
+const PILLAR_R     = 1.5
+const PILLAR_BUMP  = PILLAR_R + VEHICLE_R               // min XZ center-to-center
+const PILLAR_POS   = [[14, 14], [14, -14], [-14, 14], [-14, -14]]
+
+const TOWER_Y_MIN  = -HALF                              // -25 (floor)
+const TOWER_Y_MAX  = -HALF + 9                          // -16 (top of tower)
+const TOWER_BOXES  = [
+  { xMin: -7,    xMax: 7,    zMin: -0.75, zMax: 0.75 }, // towerA (along X)
+  { xMin: -0.75, xMax: 0.75, zMin: -7,    zMax: 7    }, // towerB (along Z)
+]
+
+function resolvePillars(state) {
+  for (const [px, pz] of PILLAR_POS) {
+    const dx   = state.x - px
+    const dz   = state.z - pz
+    const dist = Math.sqrt(dx * dx + dz * dz)
+    if (dist < PILLAR_BUMP && dist > 0) {
+      const push = (PILLAR_BUMP - dist) / dist
+      state.x += dx * push
+      state.z += dz * push
+    }
+  }
+}
+
+function resolveTower(state) {
+  // Tower only occupies the bottom portion of the arena
+  if (state.y + VEHICLE_R < TOWER_Y_MIN || state.y - VEHICLE_R > TOWER_Y_MAX) return
+  for (const box of TOWER_BOXES) {
+    const cx   = Math.max(box.xMin, Math.min(box.xMax, state.x))
+    const cz   = Math.max(box.zMin, Math.min(box.zMax, state.z))
+    const dx   = state.x - cx
+    const dz   = state.z - cz
+    const dist = Math.sqrt(dx * dx + dz * dz)
+    if (dist < VEHICLE_R && dist > 0) {
+      const push = (VEHICLE_R - dist) / dist
+      state.x += dx * push
+      state.z += dz * push
+    }
+  }
+}
+
 function nextNumber() {
   let n = 1
   while (usedNumbers.has(n)) n++
@@ -75,6 +118,9 @@ setInterval(() => {
     state.x = Math.max(-HALF + MARGIN, Math.min(HALF - MARGIN, state.x))
     state.y = Math.max(-HALF + MARGIN, Math.min(HALF - MARGIN, state.y))
     state.z = Math.max(-HALF + MARGIN, Math.min(HALF - MARGIN, state.z))
+
+    resolvePillars(state)
+    resolveTower(state)
 
     io.emit('vehicle-state', { joystickId: id, x: state.x, y: state.y, z: state.z, yaw: state.yaw })
   }
