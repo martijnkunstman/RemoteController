@@ -4,6 +4,7 @@ import {
   Scene,
   FreeCamera,
   HemisphericLight,
+  SpotLight,
   Vector3,
   Color3,
   Color4,
@@ -11,8 +12,6 @@ import {
   StandardMaterial,
   TransformNode,
   PointLight,
-  GlowLayer,
-  DynamicTexture,
 } from '@babylonjs/core'
 
 const canvas = document.getElementById('renderCanvas')
@@ -23,172 +22,156 @@ const myId = parseInt(new URLSearchParams(location.search).get('id') ?? '0', 10)
 // ─── Babylon engine & scene ───────────────────────────────────────────────────
 const engine = new Engine(canvas, true, { antialias: true })
 const scene  = new Scene(engine)
-scene.clearColor = new Color4(0.03, 0.04, 0.07, 1)
+scene.clearColor = new Color4(0.01, 0.01, 0.01, 1)
 
 // ─── Camera ───────────────────────────────────────────────────────────────────
 const camera = new FreeCamera('fpv', new Vector3(0, 0, -1), scene)
 camera.minZ = 0.1
-camera.fov  = 1.4   // ~80°, wider than default (~45°)
+camera.fov  = 1.4   // ~80°
 
-// ─── Lighting ─────────────────────────────────────────────────────────────────
+// ─── Cave lighting ────────────────────────────────────────────────────────────
 const hemi = new HemisphericLight('hemi', new Vector3(0, 1, 0), scene)
-hemi.intensity   = 0.15
-hemi.diffuse     = new Color3(0.5, 0.6, 0.8)
-hemi.groundColor = new Color3(0.02, 0.02, 0.05)
+hemi.intensity   = 0.05
+hemi.diffuse     = new Color3(0.3, 0.25, 0.2)
+hemi.groundColor = new Color3(0.02, 0.01, 0.01)
 
-const ceil1 = new PointLight('ceil1', new Vector3( 15, 23,  15), scene)
-ceil1.diffuse   = new Color3(0.6, 0.75, 1.0)
-ceil1.specular  = new Color3(0.4, 0.55, 1.0)
-ceil1.intensity = 1.2
-ceil1.range     = 35
+// 4 warm torch-like point lights — repositioned after world is received
+const torchColors = [
+  new Color3(1.0, 0.55, 0.15),
+  new Color3(1.0, 0.45, 0.10),
+  new Color3(0.9, 0.60, 0.20),
+  new Color3(1.0, 0.50, 0.05),
+]
+const torchLights = torchColors.map((col, i) => {
+  const light = new PointLight(`torch${i}`, new Vector3(0, 0, 0), scene)
+  light.diffuse   = col
+  light.specular  = col
+  light.intensity = 3.0
+  light.range     = 24
+  return light
+})
 
-const ceil2 = new PointLight('ceil2', new Vector3(-15, 23, -15), scene)
-ceil2.diffuse   = new Color3(0.6, 0.75, 1.0)
-ceil2.specular  = new Color3(0.4, 0.55, 1.0)
-ceil2.intensity = 1.2
-ceil2.range     = 35
+// Vehicle headlight (SpotLight pointing forward, updated each frame)
+const headlight = new SpotLight(
+  'headlight',
+  new Vector3(0, 0, 0),
+  new Vector3(0, 0, 1),
+  Math.PI / 3.5,   // ~51° cone
+  2,               // exponent
+  scene
+)
+headlight.diffuse   = new Color3(1.0, 0.95, 0.85)
+headlight.specular  = new Color3(1.0, 0.95, 0.85)
+headlight.intensity = 4.0
+headlight.range     = 22
 
-const warn1 = new PointLight('warn1', new Vector3( 23, -12, 0), scene)
-warn1.diffuse   = new Color3(1.0, 0.1, 0.05)
-warn1.specular  = new Color3(0.8, 0.05, 0.0)
-warn1.intensity = 0.5
-warn1.range     = 14
-
-const warn2 = new PointLight('warn2', new Vector3(-23, -12, 0), scene)
-warn2.diffuse   = new Color3(1.0, 0.1, 0.05)
-warn2.specular  = new Color3(0.8, 0.05, 0.0)
-warn2.intensity = 0.5
-warn2.range     = 14
-
-// ─── Arena ────────────────────────────────────────────────────────────────────
-const ARENA = 50
-const HALF  = ARENA / 2
-
-const arenaMesh = MeshBuilder.CreateBox('arena', { size: ARENA }, scene)
-arenaMesh.isPickable = false
-const arenaMat = new StandardMaterial('arenaMat', scene)
-arenaMat.wireframe    = true
-arenaMat.emissiveColor = new Color3(0.15, 0.45, 1.0)
-arenaMesh.material    = arenaMat
-
-const floor = MeshBuilder.CreateGround('floor', { width: ARENA, height: ARENA, subdivisions: 10 }, scene)
-floor.position.y  = -HALF
-floor.isPickable  = false
-const floorMat = new StandardMaterial('floorMat', scene)
-floorMat.wireframe    = true
-floorMat.emissiveColor = new Color3(0.08, 0.25, 0.55)
-floor.material = floorMat
-
-// ─── Starfield sphere ─────────────────────────────────────────────────────────
-function makeStarfieldTex() {
-  const size = 512
-  const tex = new DynamicTexture('starsTex', { width: size, height: size }, scene)
-  const ctx = tex.getContext()
-  ctx.fillStyle = '#03040a'
-  ctx.fillRect(0, 0, size, size)
-  for (let i = 0; i < 600; i++) {
-    const x = Math.random() * size
-    const y = Math.random() * size
-    const r = Math.random() * 1.4 + 0.2
-    const v = Math.floor(Math.random() * 120 + 135)
-    const b = Math.random() > 0.65 ? Math.min(255, v + Math.floor(Math.random() * 80)) : v
-    ctx.fillStyle = `rgb(${v},${v},${b})`
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill()
-  }
-  tex.update()
-  return tex
-}
-
-const starSphere = MeshBuilder.CreateSphere('stars', { diameter: 400, segments: 8 }, scene)
-starSphere.isPickable = false
-const starMat = new StandardMaterial('starMat', scene)
-starMat.emissiveTexture = makeStarfieldTex()
-starMat.diffuseColor   = new Color3(0, 0, 0)
-starMat.backFaceCulling = false
-starSphere.material = starMat
-
-// ─── Ceiling light strips ─────────────────────────────────────────────────────
-const ceilStripMat = new StandardMaterial('ceilStripMat', scene)
-ceilStripMat.emissiveColor = new Color3(0.15, 0.5, 1.0)
-ceilStripMat.diffuseColor  = new Color3(0, 0, 0)
-
-const ceilY = HALF - 1
-
-const cstrip1 = MeshBuilder.CreateBox('cstrip1', { width: 40, height: 0.4, depth: 0.8 }, scene)
-cstrip1.position.set(0, ceilY, 0)
-cstrip1.isPickable = false
-cstrip1.material   = ceilStripMat
-
-const cstrip2 = MeshBuilder.CreateBox('cstrip2', { width: 0.8, height: 0.4, depth: 40 }, scene)
-cstrip2.position.set(0, ceilY, 0)
-cstrip2.isPickable = false
-cstrip2.material   = ceilStripMat
-
-// ─── GlowLayer ────────────────────────────────────────────────────────────────
-const glowLayer = new GlowLayer('glow', scene)
-glowLayer.intensity = 0.7
-
-// ─── Fog ──────────────────────────────────────────────────────────────────────
+// ─── Cave fog ─────────────────────────────────────────────────────────────────
 scene.fogMode    = Scene.FOGMODE_EXP2
-scene.fogColor   = new Color3(0.03, 0.04, 0.07)
-scene.fogDensity = 0.012
+scene.fogColor   = new Color3(0.01, 0.01, 0.01)
+scene.fogDensity = 0.035
 
-// ─── Obstacles ────────────────────────────────────────────────────────────────
-const obstacleMat = new StandardMaterial('obstacleMat', scene)
-obstacleMat.diffuseColor  = new Color3(0.08, 0.09, 0.12)
-obstacleMat.emissiveColor = new Color3(0.03, 0.05, 0.10)
-obstacleMat.specularColor = new Color3(0.4, 0.5, 0.8)
-obstacleMat.specularPower = 48
+// ─── Voxel world constants (must match server/index.js) ───────────────────────
+const GRID = 25
+const CELL = 2
+const HALF = GRID * CELL / 2   // 25
 
-const ringMat = new StandardMaterial('ringMat', scene)
-ringMat.emissiveColor = new Color3(0.1, 0.5, 1.0)
-ringMat.diffuseColor  = new Color3(0, 0, 0)
+let worldGrid = null
 
-for (const [px, pz] of [[14,14],[14,-14],[-14,14],[-14,-14]]) {
-  const pillar = MeshBuilder.CreateCylinder(`pillar_${px}_${pz}`, {
-    diameter: 3, height: ARENA, tessellation: 12,
-  }, scene)
-  pillar.position.set(px, 0, pz)
-  pillar.isPickable = false
-  pillar.material   = obstacleMat
-
-  for (const ry of [-HALF + 1, HALF - 1]) {
-    const ring = MeshBuilder.CreateTorus(`ring_${px}_${pz}_${ry}`, {
-      diameter: 3.6, thickness: 0.18, tessellation: 24,
-    }, scene)
-    ring.position.set(px, ry, pz)
-    ring.isPickable = false
-    ring.material   = ringMat
-  }
+function isSolid(cx, cy, cz) {
+  if (!worldGrid) return false
+  if (cx < 0 || cx >= GRID || cy < 0 || cy >= GRID || cz < 0 || cz >= GRID) return true
+  return worldGrid[cx + cy * GRID + cz * GRID * GRID] === 1
 }
 
-const towerH = 9
-const towerY = -HALF + towerH / 2
+function cellCenter(cx, cy, cz) {
+  return new Vector3(
+    (cx + 0.5) * CELL - HALF,
+    (cy + 0.5) * CELL - HALF,
+    (cz + 0.5) * CELL - HALF,
+  )
+}
 
-const towerA = MeshBuilder.CreateBox('towerA', { width: 14, height: towerH, depth: 1.5 }, scene)
-towerA.position.set(0, towerY, 0)
-towerA.isPickable = false
-towerA.material   = obstacleMat
+// ─── Voxel scene build ────────────────────────────────────────────────────────
+const rockColors = [
+  new Color3(0.30, 0.27, 0.22),
+  new Color3(0.22, 0.22, 0.25),
+  new Color3(0.26, 0.28, 0.22),
+]
+let voxelRoots = []
 
-const towerB = MeshBuilder.CreateBox('towerB', { width: 1.5, height: towerH, depth: 14 }, scene)
-towerB.position.set(0, towerY, 0)
-towerB.isPickable = false
-towerB.material   = obstacleMat
+function buildVoxelWorld(grid) {
+  worldGrid = grid
 
-const towerGlowMat = new StandardMaterial('towerGlowMat', scene)
-towerGlowMat.emissiveColor = new Color3(0.1, 0.5, 1.0)
-towerGlowMat.diffuseColor  = new Color3(0, 0, 0)
-const topY = -HALF + towerH + 0.15
+  voxelRoots.forEach(r => r.dispose())
+  voxelRoots = []
 
-const tStripA = MeshBuilder.CreateBox('tStripA', { width: 14.2, height: 0.2, depth: 1.7 }, scene)
-tStripA.position.set(0, topY, 0)
-tStripA.isPickable = false
-tStripA.material   = towerGlowMat
+  const mats = rockColors.map((col, i) => {
+    const mat = new StandardMaterial(`rockMat${i}`, scene)
+    mat.diffuseColor  = col
+    mat.specularColor = new Color3(0.04, 0.04, 0.04)
+    mat.specularPower = 6
+    return mat
+  })
 
-const tStripB = MeshBuilder.CreateBox('tStripB', { width: 1.7, height: 0.2, depth: 14.2 }, scene)
-tStripB.position.set(0, topY, 0)
-tStripB.isPickable = false
-tStripB.material   = towerGlowMat
+  const roots = mats.map((mat, i) => {
+    const root = MeshBuilder.CreateBox(`rockRoot${i}`, { size: CELL - 0.05 }, scene)
+    root.material   = mat
+    root.isVisible  = false
+    root.isPickable = false
+    return root
+  })
+  voxelRoots = roots
+
+  const faceDir = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]
+  let count = 0
+
+  for (let z = 0; z < GRID; z++)
+    for (let y = 0; y < GRID; y++)
+      for (let x = 0; x < GRID; x++) {
+        if (!isSolid(x, y, z)) continue
+
+        // FPV: include ALL blocks including outer shell (visible as cave walls)
+        let surface = false
+        for (const [dx, dy, dz] of faceDir) {
+          if (!isSolid(x + dx, y + dy, z + dz)) { surface = true; break }
+        }
+        if (!surface) continue
+
+        const matIdx = (x * 7 + y * 13 + z * 5) % 3
+        const inst = roots[matIdx].createInstance(`v${count++}`)
+        inst.position = cellCenter(x, y, z)
+        inst.isPickable = false
+      }
+
+  console.log(`[Voxels] ${count} surface instances (fpv, with outer shell)`)
+  repositionTorches()
+}
+
+function repositionTorches() {
+  if (!worldGrid) return
+  const quads = [[], [], [], []]
+  for (let z = 1; z < GRID - 1; z++)
+    for (let y = 1; y < GRID - 1; y++)
+      for (let x = 1; x < GRID - 1; x++) {
+        if (isSolid(x, y, z)) continue
+        const q = (x < GRID / 2 ? 0 : 1) + (z < GRID / 2 ? 0 : 2)
+        quads[q].push([x, y, z])
+      }
+  torchLights.forEach((light, i) => {
+    const pool = quads[i].length > 0 ? quads[i] : quads.find(q => q.length > 0) || [[12, 12, 12]]
+    const [cx, cy, cz] = pool[Math.floor(Math.random() * pool.length)]
+    light.position = cellCenter(cx, cy, cz)
+  })
+}
+
+// ─── Bullet world collision ───────────────────────────────────────────────────
+function bulletHitsWorld(p) {
+  if (!worldGrid) return false
+  const cx = Math.floor((p.x + HALF) / CELL)
+  const cy = Math.floor((p.y + HALF) / CELL)
+  const cz = Math.floor((p.z + HALF) / CELL)
+  return isSolid(cx, cy, cz)
+}
 
 // ─── Vehicle palette (must match display.js) ──────────────────────────────────
 const PALETTE = [
@@ -207,42 +190,17 @@ function palette(id) { return PALETTE[(id - 1) % PALETTE.length] }
 // ─── Vehicle management ────────────────────────────────────────────────────────
 const BULLET_SPEED = 18
 const MAX_BULLETS  = 30
-const BULLET_R     = 0.14
-
-const BPILLAR_BUMP = 1.5 + BULLET_R
-const BPILLAR_POS  = [[14, 14], [14, -14], [-14, 14], [-14, -14]]
-const BTOWER_Y_MIN = -HALF
-const BTOWER_Y_MAX = -HALF + 9
-const BTOWER_BOXES = [
-  { xMin: -7,    xMax: 7,    zMin: -0.75, zMax: 0.75 },
-  { xMin: -0.75, xMax: 0.75, zMin: -7,    zMax: 7    },
-]
 
 const bulletMat = new StandardMaterial('bulletMat', scene)
 bulletMat.diffuseColor  = new Color3(1, 0.08, 0.08)
 bulletMat.emissiveColor = new Color3(1, 0,    0)
 bulletMat.specularColor = new Color3(1, 0.4,  0.4)
 
-function bulletHitsWorld(p) {
-  for (const [px, pz] of BPILLAR_POS) {
-    const dx = p.x - px, dz = p.z - pz
-    if (Math.sqrt(dx * dx + dz * dz) < BPILLAR_BUMP) return true
-  }
-  if (p.y >= BTOWER_Y_MIN && p.y <= BTOWER_Y_MAX) {
-    for (const box of BTOWER_BOXES) {
-      if (p.x > box.xMin - BULLET_R && p.x < box.xMax + BULLET_R &&
-          p.z > box.zMin - BULLET_R && p.z < box.zMax + BULLET_R) return true
-    }
-  }
-  return false
-}
-
 const vehicles = new Map()
 
 function createVehicle(id) {
   const col   = palette(id)
-  const angle = ((id - 1) / PALETTE.length) * Math.PI * 2
-  const state = { x: Math.sin(angle) * 3, y: 0, z: Math.cos(angle) * 3, yaw: angle + Math.PI }
+  const state = { x: 0, y: 0, z: 0, yaw: 0 }
 
   const pivot = new TransformNode(`pivot-${id}`, scene)
 
@@ -302,7 +260,7 @@ function removeVehicle(id) {
 
 // ─── Render loop ───────────────────────────────────────────────────────────────
 engine.runRenderLoop(() => {
-  const dt = engine.getDeltaTime() / 1000   // used for bullet movement
+  const dt = engine.getDeltaTime() / 1000
 
   for (const [, v] of vehicles) {
     const { state, pivot, glow, bullets } = v
@@ -324,9 +282,11 @@ engine.runRenderLoop(() => {
       b.mesh.position.z += b.vz * BULLET_SPEED * dt
       const p = b.mesh.position
 
-      if (Math.abs(p.y) > HALF) { b.mesh.dispose(); bullets.splice(i, 1); continue }
+      if (Math.abs(p.x) > HALF || Math.abs(p.y) > HALF || Math.abs(p.z) > HALF) {
+        b.mesh.dispose(); bullets.splice(i, 1); continue
+      }
 
-      if (Math.abs(p.x) >= HALF || Math.abs(p.z) >= HALF || bulletHitsWorld(p)) {
+      if (bulletHitsWorld(p)) {
         b.hitTimer = 0.12
         b.mesh.scaling.setAll(3)
         continue
@@ -339,11 +299,16 @@ engine.runRenderLoop(() => {
   if (own) {
     const { state } = own
     camera.position.set(state.x, state.y, state.z)
-    camera.setTarget(new Vector3(
+    const target = new Vector3(
       state.x + Math.sin(state.yaw),
       state.y,
       state.z + Math.cos(state.yaw),
-    ))
+    )
+    camera.setTarget(target)
+
+    // Headlight follows vehicle position and aims forward
+    headlight.position.copyFrom(camera.position)
+    headlight.direction.set(Math.sin(state.yaw), 0, Math.cos(state.yaw))
   }
 
   scene.render()
@@ -353,6 +318,10 @@ window.addEventListener('resize', () => engine.resize())
 
 // ─── Socket.IO ────────────────────────────────────────────────────────────────
 const socket = io()
+
+socket.on('world', (data) => {
+  buildVoxelWorld(new Uint8Array(data))
+})
 
 socket.on('joystick-list', (ids) => {
   for (const id of ids) {
