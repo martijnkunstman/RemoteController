@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Remote Controller</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        background: #0f0f13;
+        color: #e0e0e0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+      }
+
+      h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #fff;
+        letter-spacing: -0.5px;
+        margin-bottom: 8px;
+      }
+
+      p {
+        color: #888;
+        margin-bottom: 32px;
+        font-size: 0.95rem;
+      }
+
+      .card-grid {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        background: #1a1a24;
+        border: 1px solid #2a2a38;
+        border-radius: 16px;
+        padding: 32px 40px;
+        text-decoration: none;
+        color: inherit;
+        transition: border-color 0.2s, transform 0.15s;
+        width: 200px;
+      }
+
+      .card:hover {
+        border-color: #5b6af0;
+        transform: translateY(-2px);
+      }
+
+      .card-icon {
+        font-size: 2.5rem;
+      }
+
+      .card-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #fff;
+      }
+
+      .card-desc {
+        font-size: 0.8rem;
+        color: #666;
+        text-align: center;
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/modulepreload-polyfill-B5Qt9EMX.js"></script>
+  </head>
+  <body>
+    <h1>Remote Controller</h1>
+    <p>Open both pages — joystick controls the dot in real time via WebSocket</p>
+    <div class="card-grid">
+      <a class="card" href="/joystick.html">
+        <span class="card-icon">🕹️</span>
+        <span class="card-title">Joystick</span>
+        <span class="card-desc">Control pad — send input</span>
+      </a>
+      <a class="card" href="/display.html">
+        <span class="card-icon">🎯</span>
+        <span class="card-title">Display</span>
+        <span class="card-desc">Dot receiver — see output</span>
+      </a>
+    </div>
+  </body>
+</html>
