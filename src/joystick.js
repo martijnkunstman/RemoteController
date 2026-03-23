@@ -1,11 +1,13 @@
 import { io } from 'socket.io-client'
 import nipplejs from 'nipplejs'
 
-const statusEl    = document.getElementById('status')
-const coordsLeft  = document.getElementById('coords-left')
-const coordsRight = document.getElementById('coords-right')
-const fireBtnEl   = document.getElementById('btn-fire')
-const idBadgeEl   = document.getElementById('joystick-id')
+const statusEl       = document.getElementById('status')
+const coordsLeft     = document.getElementById('coords-left')
+const coordsRight    = document.getElementById('coords-right')
+const fireBtnEl      = document.getElementById('btn-fire')
+const idBadgeEl      = document.getElementById('joystick-id')
+const fpvFrame       = document.getElementById('fpv-frame')
+const fpvPlaceholder = document.getElementById('fpv-placeholder')
 
 const socket = io()
 socket.on('connect', () => {
@@ -20,14 +22,13 @@ socket.on('disconnect', () => {
 })
 socket.on('joystick-assigned', ({ id }) => {
   idBadgeEl.textContent = String(id).padStart(2, '0')
+  fpvPlaceholder.style.display = 'none'
+  fpvFrame.style.display = 'block'
+  fpvFrame.src = `/firstpersonview.html?id=${id}`
 })
 
 let moveInput = { x: 0, y: 0 }
 let lookInput = { x: 0, y: 0 }
-
-function emitMove() {
-  socket.emit('joystick-move', { move: moveInput, look: lookInput })
-}
 
 // ─── Left: analog nipplejs joystick (movement) ───────────────────────────────
 const stick = nipplejs.create({
@@ -46,15 +47,14 @@ stick.on('move', (_e, data) => {
     y: +(Math.sin(data.angle.radian) * f).toFixed(3),
   }
   coordsLeft.innerHTML = `x: ${moveInput.x.toFixed(2)} &nbsp; y: ${moveInput.y.toFixed(2)}`
-  emitMove()
+  emitInput()
 })
 
 stick.on('end', () => {
-  // If WASD keys are held, let them keep control; otherwise zero out
   if (pressedWASD.size === 0) {
     moveInput = { x: 0, y: 0 }
     coordsLeft.innerHTML = `x: 0.00 &nbsp; y: 0.00`
-    emitMove()
+    emitInput()
   }
 })
 
@@ -62,7 +62,6 @@ stick.on('end', () => {
 const pressedWASD = new Set()
 
 function updateMove() {
-  // Only override analog stick if no stick input is active
   let x = 0, y = 0
   for (const k of pressedWASD) {
     if (k === 'd') x =  1
@@ -72,7 +71,7 @@ function updateMove() {
   }
   moveInput = { x, y }
   coordsLeft.innerHTML = `x: ${x.toFixed(2)} &nbsp; y: ${y.toFixed(2)}`
-  emitMove()
+  emitInput()
 }
 
 const wasdMap = { KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd' }
@@ -98,7 +97,7 @@ function updateLook() {
   }
   lookInput = { x, y }
   coordsRight.innerHTML = `x: ${x.toFixed(2)} &nbsp; y: ${y.toFixed(2)}`
-  emitMove()
+  emitInput()
 }
 
 function press(name)   { if (!pressedKeys.has(name)) { pressedKeys.add(name);    updateLook() } }
@@ -115,7 +114,7 @@ for (const btn of document.querySelectorAll('.dpad-btn')) {
 const keyMap = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }
 window.addEventListener('keydown', (e) => {
   const name = keyMap[e.key]
-  if (name) { e.preventDefault(); document.getElementById(`btn-${name}`)?.classList.add('active');    press(name) }
+  if (name) { e.preventDefault(); document.getElementById(`btn-${name}`)?.classList.add('active'); press(name) }
 })
 window.addEventListener('keyup', (e) => {
   const name = keyMap[e.key]
@@ -123,14 +122,13 @@ window.addEventListener('keyup', (e) => {
 })
 
 // ─── Center: fire button ──────────────────────────────────────────────────────
-// Rate-limited: one shot per FIRE_INTERVAL ms while held
-const FIRE_INTERVAL = 150   // ~6-7 shots/second
+const FIRE_INTERVAL = 150
 let fireTimer = null
 
 function startFiring() {
   if (fireTimer !== null) return
   fireBtnEl.classList.add('active')
-  socket.emit('fire')        // immediate first shot
+  socket.emit('fire')
   fireTimer = setInterval(() => socket.emit('fire'), FIRE_INTERVAL)
 }
 
@@ -148,3 +146,15 @@ fireBtnEl.addEventListener('contextmenu', (e) => e.preventDefault())
 
 window.addEventListener('keydown', (e) => { if (e.code === 'Space' && !e.repeat) { e.preventDefault(); startFiring() } })
 window.addEventListener('keyup',   (e) => { if (e.code === 'Space') stopFiring() })
+
+// ─── Input emit (event-driven) ────────────────────────────────────────────────
+// Sends current inputs to the server whenever they change.
+// Server owns physics/position and keeps the last known input.
+function emitInput() {
+  socket.emit('joystick-input', {
+    moveX: moveInput.x,
+    moveY: moveInput.y,
+    lookX: lookInput.x,
+    lookY: lookInput.y,
+  })
+}

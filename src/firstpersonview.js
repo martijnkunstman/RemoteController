@@ -2,7 +2,7 @@ import { io } from 'socket.io-client'
 import {
   Engine,
   Scene,
-  ArcRotateCamera,
+  FreeCamera,
   HemisphericLight,
   Vector3,
   Color3,
@@ -13,14 +13,12 @@ import {
   PointLight,
   GlowLayer,
   DynamicTexture,
-  Matrix,
 } from '@babylonjs/core'
 
-const statusEl        = document.getElementById('status')
-const joystickCountEl = document.getElementById('joystick-count')
-const labelsEl        = document.getElementById('labels')
-const canvas          = document.getElementById('renderCanvas')
-const autoRotateEl    = document.getElementById('auto-rotate')
+const canvas = document.getElementById('renderCanvas')
+
+// My joystick ID — read from ?id=N in the URL
+const myId = parseInt(new URLSearchParams(location.search).get('id') ?? '0', 10)
 
 // ─── Babylon engine & scene ───────────────────────────────────────────────────
 const engine = new Engine(canvas, true, { antialias: true })
@@ -28,19 +26,8 @@ const scene  = new Scene(engine)
 scene.clearColor = new Color4(0.03, 0.04, 0.07, 1)
 
 // ─── Camera ───────────────────────────────────────────────────────────────────
-const camera = new ArcRotateCamera('cam', -Math.PI / 4, Math.PI / 3.5, 90, Vector3.Zero(), scene)
-camera.lowerRadiusLimit = 20
-camera.upperRadiusLimit = 250
-camera.attachControl(canvas, true)
-
-// ─── Auto-rotate ──────────────────────────────────────────────────────────────
-const AUTO_ROTATE_SPEED = 0.2
-
-const autoRotateSaved = localStorage.getItem('autoRotate')
-autoRotateEl.checked = autoRotateSaved === 'true'
-autoRotateEl.addEventListener('change', () => {
-  localStorage.setItem('autoRotate', autoRotateEl.checked)
-})
+const camera = new FreeCamera('fpv', new Vector3(0, 0, -1), scene)
+camera.minZ = 0.1
 
 // ─── Lighting ─────────────────────────────────────────────────────────────────
 const hemi = new HemisphericLight('hemi', new Vector3(0, 1, 0), scene)
@@ -48,7 +35,6 @@ hemi.intensity   = 0.15
 hemi.diffuse     = new Color3(0.5, 0.6, 0.8)
 hemi.groundColor = new Color3(0.02, 0.02, 0.05)
 
-// Ceiling point lights (cold blue-white)
 const ceil1 = new PointLight('ceil1', new Vector3( 15, 23,  15), scene)
 ceil1.diffuse   = new Color3(0.6, 0.75, 1.0)
 ceil1.specular  = new Color3(0.4, 0.55, 1.0)
@@ -61,7 +47,6 @@ ceil2.specular  = new Color3(0.4, 0.55, 1.0)
 ceil2.intensity = 1.2
 ceil2.range     = 35
 
-// Red warning lights on two walls (atmosphere + spatial landmark)
 const warn1 = new PointLight('warn1', new Vector3( 23, -12, 0), scene)
 warn1.diffuse   = new Color3(1.0, 0.1, 0.05)
 warn1.specular  = new Color3(0.8, 0.05, 0.0)
@@ -78,7 +63,6 @@ warn2.range     = 14
 const ARENA = 50
 const HALF  = ARENA / 2
 
-// Wireframe outline — bright cold blue edge
 const arenaMesh = MeshBuilder.CreateBox('arena', { size: ARENA }, scene)
 arenaMesh.isPickable = false
 const arenaMat = new StandardMaterial('arenaMat', scene)
@@ -86,7 +70,6 @@ arenaMat.wireframe    = true
 arenaMat.emissiveColor = new Color3(0.15, 0.45, 1.0)
 arenaMesh.material    = arenaMat
 
-// Wireframe floor grid overlay
 const floor = MeshBuilder.CreateGround('floor', { width: ARENA, height: ARENA, subdivisions: 10 }, scene)
 floor.position.y  = -HALF
 floor.isPickable  = false
@@ -123,7 +106,7 @@ starMat.diffuseColor   = new Color3(0, 0, 0)
 starMat.backFaceCulling = false
 starSphere.material = starMat
 
-// ─── Ceiling light strips (visual mesh) ───────────────────────────────────────
+// ─── Ceiling light strips ─────────────────────────────────────────────────────
 const ceilStripMat = new StandardMaterial('ceilStripMat', scene)
 ceilStripMat.emissiveColor = new Color3(0.15, 0.5, 1.0)
 ceilStripMat.diffuseColor  = new Color3(0, 0, 0)
@@ -160,7 +143,6 @@ const ringMat = new StandardMaterial('ringMat', scene)
 ringMat.emissiveColor = new Color3(0.1, 0.5, 1.0)
 ringMat.diffuseColor  = new Color3(0, 0, 0)
 
-// 4 corner pillars at ±14 on XZ
 for (const [px, pz] of [[14,14],[14,-14],[-14,14],[-14,-14]]) {
   const pillar = MeshBuilder.CreateCylinder(`pillar_${px}_${pz}`, {
     diameter: 3, height: ARENA, tessellation: 12,
@@ -169,7 +151,6 @@ for (const [px, pz] of [[14,14],[14,-14],[-14,14],[-14,-14]]) {
   pillar.isPickable = false
   pillar.material   = obstacleMat
 
-  // Glowing rings at base and top
   for (const ry of [-HALF + 1, HALF - 1]) {
     const ring = MeshBuilder.CreateTorus(`ring_${px}_${pz}_${ry}`, {
       diameter: 3.6, thickness: 0.18, tessellation: 24,
@@ -180,9 +161,8 @@ for (const [px, pz] of [[14,14],[14,-14],[-14,14],[-14,-14]]) {
   }
 }
 
-// Central cross-tower (two perpendicular box walls)
-const towerH   = 9
-const towerY   = -HALF + towerH / 2
+const towerH = 9
+const towerY = -HALF + towerH / 2
 
 const towerA = MeshBuilder.CreateBox('towerA', { width: 14, height: towerH, depth: 1.5 }, scene)
 towerA.position.set(0, towerY, 0)
@@ -194,7 +174,6 @@ towerB.position.set(0, towerY, 0)
 towerB.isPickable = false
 towerB.material   = obstacleMat
 
-// Glowing edge strips on top of tower
 const towerGlowMat = new StandardMaterial('towerGlowMat', scene)
 towerGlowMat.emissiveColor = new Color3(0.1, 0.5, 1.0)
 towerGlowMat.diffuseColor  = new Color3(0, 0, 0)
@@ -210,17 +189,19 @@ tStripB.position.set(0, topY, 0)
 tStripB.isPickable = false
 tStripB.material   = towerGlowMat
 
-// ─── Vehicle palette ──────────────────────────────────────────────────────────
+// ─── Vehicle palette (must match display.js) ──────────────────────────────────
 const PALETTE = [
-  { d: [0.36, 0.42, 0.94], e: [0.08, 0.10, 0.28], g: [0.4, 0.5, 1.0],  css: '#7b8fff' },
-  { d: [0.94, 0.32, 0.32], e: [0.28, 0.06, 0.06], g: [1.0, 0.35, 0.35], css: '#ff6060' },
-  { d: [0.28, 0.90, 0.46], e: [0.05, 0.26, 0.11], g: [0.35, 1.0, 0.5],  css: '#5eff82' },
-  { d: [0.80, 0.32, 0.94], e: [0.22, 0.06, 0.28], g: [0.85, 0.38, 1.0], css: '#cc60ff' },
-  { d: [0.94, 0.80, 0.22], e: [0.28, 0.22, 0.04], g: [1.0, 0.88, 0.3],  css: '#ffdc44' },
-  { d: [0.22, 0.88, 0.90], e: [0.04, 0.24, 0.26], g: [0.3, 1.0, 1.0],   css: '#44f0ff' },
-  { d: [0.94, 0.32, 0.74], e: [0.28, 0.06, 0.20], g: [1.0, 0.38, 0.82], css: '#ff60cc' },
-  { d: [0.94, 0.56, 0.20], e: [0.28, 0.14, 0.04], g: [1.0, 0.62, 0.28], css: '#ff9644' },
+  { d: [0.36, 0.42, 0.94], e: [0.08, 0.10, 0.28], g: [0.4, 0.5, 1.0] },
+  { d: [0.94, 0.32, 0.32], e: [0.28, 0.06, 0.06], g: [1.0, 0.35, 0.35] },
+  { d: [0.28, 0.90, 0.46], e: [0.05, 0.26, 0.11], g: [0.35, 1.0, 0.5] },
+  { d: [0.80, 0.32, 0.94], e: [0.22, 0.06, 0.28], g: [0.85, 0.38, 1.0] },
+  { d: [0.94, 0.80, 0.22], e: [0.28, 0.22, 0.04], g: [1.0, 0.88, 0.3] },
+  { d: [0.22, 0.88, 0.90], e: [0.04, 0.24, 0.26], g: [0.3, 1.0, 1.0] },
+  { d: [0.94, 0.32, 0.74], e: [0.28, 0.06, 0.20], g: [1.0, 0.38, 0.82] },
+  { d: [0.94, 0.56, 0.20], e: [0.28, 0.14, 0.04], g: [1.0, 0.62, 0.28] },
 ]
+
+function palette(id) { return PALETTE[(id - 1) % PALETTE.length] }
 
 // ─── Vehicle management ────────────────────────────────────────────────────────
 const BULLET_SPEED = 18
@@ -228,81 +209,62 @@ const MAX_BULLETS  = 30
 
 const vehicles = new Map()
 
-function palette(joystickId) {
-  return PALETTE[(joystickId - 1) % PALETTE.length]
-}
+function createVehicle(id) {
+  const col   = palette(id)
+  const angle = ((id - 1) / PALETTE.length) * Math.PI * 2
+  const state = { x: Math.sin(angle) * 3, y: 0, z: Math.cos(angle) * 3, yaw: angle + Math.PI }
 
-function createVehicle(joystickId) {
-  const col = palette(joystickId)
+  const pivot = new TransformNode(`pivot-${id}`, scene)
 
-  const angle  = ((joystickId - 1) / PALETTE.length) * Math.PI * 2
-  const startX = Math.sin(angle) * 3
-  const startZ = Math.cos(angle) * 3
-  const state  = { x: startX, y: 0, z: startZ, yaw: angle + Math.PI }
-
-  const pivot = new TransformNode(`pivot-${joystickId}`, scene)
-
-  const pyramid = MeshBuilder.CreateCylinder(`pyramid-${joystickId}`, {
+  const pyramid = MeshBuilder.CreateCylinder(`pyramid-${id}`, {
     diameterTop: 0, diameterBottom: 1.0, height: 2.2, tessellation: 4,
   }, scene)
   pyramid.parent     = pivot
   pyramid.rotation.x = Math.PI / 2
 
-  const mat = new StandardMaterial(`mat-${joystickId}`, scene)
+  if (id === myId) pyramid.isVisible = false
+
+  const mat = new StandardMaterial(`mat-${id}`, scene)
   mat.diffuseColor  = new Color3(...col.d)
   mat.emissiveColor = new Color3(...col.e)
   mat.specularColor = new Color3(0.7, 0.75, 1.0)
   mat.specularPower = 64
   pyramid.material  = mat
 
-  const glow = new PointLight(`glow-${joystickId}`, Vector3.Zero(), scene)
+  const glow = new PointLight(`glow-${id}`, Vector3.Zero(), scene)
   glow.diffuse   = new Color3(...col.g)
   glow.specular  = new Color3(...col.g)
   glow.intensity = 3.0
   glow.range     = 10
 
-  const bulletMat = new StandardMaterial(`bmat-${joystickId}`, scene)
+  const bulletMat = new StandardMaterial(`bmat-${id}`, scene)
   bulletMat.diffuseColor  = new Color3(...col.d)
   bulletMat.emissiveColor = new Color3(...col.d)
-  bulletMat.specularColor = new Color3(1, 1, 1)
-
-  const label = document.createElement('div')
-  label.className = 'vehicle-label'
-  label.textContent = String(joystickId).padStart(2, '0')
-  label.style.color       = col.css
-  label.style.borderColor = col.css
-  label.style.boxShadow   = `0 0 6px ${col.css}55`
-  labelsEl.appendChild(label)
 
   const bullets = []
 
-  return { pivot, pyramid, mat, glow, bulletMat, state, bullets, label }
+  return { pivot, pyramid, mat, glow, bulletMat, state, bullets }
 }
 
 function spawnBullet(vehicle) {
   const { bullets, bulletMat, pivot, state } = vehicle
-
   if (bullets.length >= MAX_BULLETS) {
-    const old = bullets.shift()
-    old.mesh.dispose()
+    bullets.shift().mesh.dispose()
   }
-
   const mesh = MeshBuilder.CreateSphere('bullet', { diameter: 0.28, segments: 5 }, scene)
   mesh.material   = bulletMat
   mesh.isPickable = false
-
   const tipDist = 1.1
   mesh.position.set(
     pivot.position.x + Math.sin(state.yaw) * tipDist,
     pivot.position.y,
     pivot.position.z + Math.cos(state.yaw) * tipDist,
   )
-
   bullets.push({ mesh, vx: Math.sin(state.yaw), vz: Math.cos(state.yaw) })
 }
 
-function removeVehicle(joystickId) {
-  const v = vehicles.get(joystickId)
+function removeVehicle(id) {
+  const v = vehicles.get(id)
   if (!v) return
   v.pyramid.dispose()
   v.pivot.dispose()
@@ -310,16 +272,15 @@ function removeVehicle(joystickId) {
   v.mat.dispose()
   v.bulletMat.dispose()
   v.bullets.forEach(b => b.mesh.dispose())
-  v.label.remove()
-  vehicles.delete(joystickId)
+  vehicles.delete(id)
 }
 
 // ─── Render loop ───────────────────────────────────────────────────────────────
 engine.runRenderLoop(() => {
-  const dt = engine.getDeltaTime() / 1000
+  const dt = engine.getDeltaTime() / 1000   // used for bullet movement
 
   for (const [, v] of vehicles) {
-    const { state, pivot, glow, bullets, label } = v
+    const { state, pivot, glow, bullets } = v
 
     pivot.position.set(state.x, state.y, state.z)
     pivot.rotation.y = state.yaw
@@ -335,23 +296,19 @@ engine.runRenderLoop(() => {
         bullets.splice(i, 1)
       }
     }
-
-    const proj = Vector3.Project(
-      pivot.position,
-      Matrix.Identity(),
-      scene.getTransformMatrix(),
-      camera.viewport.toGlobal(engine.getRenderWidth(), engine.getRenderHeight()),
-    )
-    if (proj.z > 0 && proj.z < 1) {
-      label.style.display = 'block'
-      label.style.left    = `${proj.x + 18}px`
-      label.style.top     = `${proj.y - 14}px`
-    } else {
-      label.style.display = 'none'
-    }
   }
 
-  if (autoRotateEl.checked) camera.alpha += AUTO_ROTATE_SPEED * dt
+  // First-person camera follows own vehicle
+  const own = vehicles.get(myId)
+  if (own) {
+    const { state } = own
+    camera.position.set(state.x, state.y, state.z)
+    camera.setTarget(new Vector3(
+      state.x + Math.sin(state.yaw),
+      state.y,
+      state.z + Math.cos(state.yaw),
+    ))
+  }
 
   scene.render()
 })
@@ -361,16 +318,6 @@ window.addEventListener('resize', () => engine.resize())
 // ─── Socket.IO ────────────────────────────────────────────────────────────────
 const socket = io()
 
-socket.on('connect', () => {
-  statusEl.textContent = 'Connected'
-  statusEl.classList.add('connected')
-})
-
-socket.on('disconnect', () => {
-  statusEl.textContent = 'Disconnected'
-  statusEl.classList.remove('connected')
-})
-
 socket.on('joystick-list', (ids) => {
   for (const id of ids) {
     if (!vehicles.has(id)) vehicles.set(id, createVehicle(id))
@@ -378,10 +325,6 @@ socket.on('joystick-list', (ids) => {
   for (const id of [...vehicles.keys()]) {
     if (!ids.includes(id)) removeVehicle(id)
   }
-  const n = ids.length
-  joystickCountEl.textContent = n === 0
-    ? 'No joysticks'
-    : `${n} joystick${n !== 1 ? 's' : ''} connected`
 })
 
 socket.on('vehicle-state', (data) => {

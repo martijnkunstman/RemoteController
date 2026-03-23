@@ -7,6 +7,7 @@ export default defineConfig({
         main: 'index.html',
         joystick: 'joystick.html',
         display: 'display.html',
+        firstpersonview: 'firstpersonview.html',
       },
     },
   },

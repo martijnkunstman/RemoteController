@@ -55,7 +55,21 @@
         text-align: center;
       }
 
-      /* ── three-column layout ── */
+      /* ── main horizontal split ── */
+      .main-split {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+      }
+
+      /* ── left: controls ── */
+      .controls-side {
+        flex: 0 0 auto;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid #2a2a38;
+      }
+
       .controls-row {
         flex: 1;
         display: flex;
@@ -69,6 +83,7 @@
         align-items: center;
         justify-content: center;
         gap: 14px;
+        padding: 0 8px;
       }
       .joystick-panel:first-child { border-right: 1px solid #2a2a38; }
       .joystick-panel:last-child  { border-left:  1px solid #2a2a38; }
@@ -88,7 +103,7 @@
         min-height: 1.2em;
       }
 
-      /* ── left: nipplejs zone ── */
+      /* ── nipplejs zone ── */
       #zone-left {
         width: 200px;
         height: 200px;
@@ -209,6 +224,32 @@
         background: rgba(91,106,240,0.12) !important;
         border: 2px solid rgba(91,106,240,0.35) !important;
       }
+
+      /* ── right: first-person view iframe ── */
+      .fpv-side {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+
+      #fpv-frame {
+        flex: 1;
+        width: 100%;
+        border: none;
+        display: block;
+        background: #0a0a0f;
+      }
+
+      .fpv-placeholder {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #333;
+        font-size: 0.85rem;
+        letter-spacing: 0.05em;
+      }
     </style>
   </head>
   <body>
@@ -221,41 +262,54 @@
       </div>
     </header>
 
-    <div class="controls-row">
+    <div class="main-split">
 
-      <!-- LEFT: analog joystick — movement -->
-      <div class="joystick-panel">
-        <span class="panel-label">Move</span>
-        <div class="legend">
-          <span></span>        <span>↑ Forward</span>
-          <span>← Left</span>  <span>Right →</span>
-          <span></span>        <span>↓ Back</span>
+      <!-- LEFT: controls -->
+      <div class="controls-side">
+        <div class="controls-row">
+
+          <!-- analog joystick — movement -->
+          <div class="joystick-panel">
+            <span class="panel-label">Move</span>
+            <div class="legend">
+              <span></span>        <span>↑ Forward</span>
+              <span>← Left</span>  <span>Right →</span>
+              <span></span>        <span>↓ Back</span>
+            </div>
+            <div id="zone-left"></div>
+            <div class="coords" id="coords-left">x: 0.00 &nbsp; y: 0.00</div>
+          </div>
+
+          <!-- fire button -->
+          <div class="fire-panel">
+            <span class="fire-label">Fire</span>
+            <button id="btn-fire">🔴</button>
+            <span class="fire-hint">hold to<br>rapid fire<br><span style="color:#1e1e2e">space</span></span>
+          </div>
+
+          <!-- D-pad — up/down/rotate -->
+          <div class="joystick-panel">
+            <span class="panel-label">Look</span>
+            <div class="dpad">
+              <button class="dpad-btn up"    id="btn-up">↑</button>
+              <button class="dpad-btn left"  id="btn-left">↺</button>
+              <button class="dpad-btn right" id="btn-right">↻</button>
+              <button class="dpad-btn down"  id="btn-down">↓</button>
+            </div>
+            <div class="dpad-hint">
+              ↑ Up &nbsp;·&nbsp; ↓ Down<br>
+              ↺ CCW &nbsp;·&nbsp; ↻ CW
+            </div>
+            <div class="coords" id="coords-right">x: 0.00 &nbsp; y: 0.00</div>
+          </div>
+
         </div>
-        <div id="zone-left"></div>
-        <div class="coords" id="coords-left">x: 0.00 &nbsp; y: 0.00</div>
       </div>
 
-      <!-- CENTER: fire button -->
-      <div class="fire-panel">
-        <span class="fire-label">Fire</span>
-        <button id="btn-fire">🔴</button>
-        <span class="fire-hint">hold to<br>rapid fire<br><span style="color:#1e1e2e">space</span></span>
-      </div>
-
-      <!-- RIGHT: D-pad — up/down/rotate -->
-      <div class="joystick-panel">
-        <span class="panel-label">Look</span>
-        <div class="dpad">
-          <button class="dpad-btn up"    id="btn-up">↑</button>
-          <button class="dpad-btn left"  id="btn-left">↺</button>
-          <button class="dpad-btn right" id="btn-right">↻</button>
-          <button class="dpad-btn down"  id="btn-down">↓</button>
-        </div>
-        <div class="dpad-hint">
-          ↑ Up &nbsp;·&nbsp; ↓ Down<br>
-          ↺ CCW &nbsp;·&nbsp; ↻ CW
-        </div>
-        <div class="coords" id="coords-right">x: 0.00 &nbsp; y: 0.00</div>
+      <!-- RIGHT: first-person view -->
+      <div class="fpv-side">
+        <div class="fpv-placeholder" id="fpv-placeholder">Waiting for joystick ID…</div>
+        <iframe id="fpv-frame" style="display:none" allowfullscreen></iframe>
       </div>
 
     </div>
