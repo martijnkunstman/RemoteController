@@ -5,10 +5,22 @@ const statusEl    = document.getElementById('status')
 const coordsLeft  = document.getElementById('coords-left')
 const coordsRight = document.getElementById('coords-right')
 const fireBtnEl   = document.getElementById('btn-fire')
+const idBadgeEl   = document.getElementById('joystick-id')
 
 const socket = io()
-socket.on('connect',    () => { statusEl.textContent = 'Connected';    statusEl.classList.add('connected') })
-socket.on('disconnect', () => { statusEl.textContent = 'Disconnected'; statusEl.classList.remove('connected') })
+socket.on('connect', () => {
+  statusEl.textContent = 'Connected'
+  statusEl.classList.add('connected')
+  socket.emit('register-joystick')
+})
+socket.on('disconnect', () => {
+  statusEl.textContent = 'Disconnected'
+  statusEl.classList.remove('connected')
+  idBadgeEl.textContent = '--'
+})
+socket.on('joystick-assigned', ({ id }) => {
+  idBadgeEl.textContent = String(id).padStart(2, '0')
+})
 
 let moveInput = { x: 0, y: 0 }
 let lookInput = { x: 0, y: 0 }
@@ -38,9 +50,39 @@ stick.on('move', (_e, data) => {
 })
 
 stick.on('end', () => {
-  moveInput = { x: 0, y: 0 }
-  coordsLeft.innerHTML = `x: 0.00 &nbsp; y: 0.00`
+  // If WASD keys are held, let them keep control; otherwise zero out
+  if (pressedWASD.size === 0) {
+    moveInput = { x: 0, y: 0 }
+    coordsLeft.innerHTML = `x: 0.00 &nbsp; y: 0.00`
+    emitMove()
+  }
+})
+
+// ─── Left: WASD keyboard movement ────────────────────────────────────────────
+const pressedWASD = new Set()
+
+function updateMove() {
+  // Only override analog stick if no stick input is active
+  let x = 0, y = 0
+  for (const k of pressedWASD) {
+    if (k === 'd') x =  1
+    if (k === 'a') x = -1
+    if (k === 'w') y =  1
+    if (k === 's') y = -1
+  }
+  moveInput = { x, y }
+  coordsLeft.innerHTML = `x: ${x.toFixed(2)} &nbsp; y: ${y.toFixed(2)}`
   emitMove()
+}
+
+const wasdMap = { KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd' }
+window.addEventListener('keydown', (e) => {
+  const k = wasdMap[e.code]
+  if (k && !pressedWASD.has(k)) { e.preventDefault(); pressedWASD.add(k); updateMove() }
+})
+window.addEventListener('keyup', (e) => {
+  const k = wasdMap[e.code]
+  if (k) { pressedWASD.delete(k); updateMove() }
 })
 
 // ─── Right: D-pad (look / elevation / rotation) ──────────────────────────────

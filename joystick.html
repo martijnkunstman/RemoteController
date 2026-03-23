@@ -41,6 +41,20 @@
       }
       #status.connected { background: #1a3320; color: #4ade80; }
 
+      #joystick-id {
+        font-family: 'Courier New', monospace;
+        font-size: 1rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        padding: 3px 10px;
+        border-radius: 20px;
+        background: #1e1e2e;
+        color: #5b6af0;
+        border: 1px solid #2a2a5a;
+        min-width: 3ch;
+        text-align: center;
+      }
+
       /* ── three-column layout ── */
       .controls-row {
         flex: 1;
@@ -201,7 +215,10 @@
     <header>
       <a href="/">← Home</a>
       <h2>🕹️ Dual Control</h2>
-      <span id="status">Connecting…</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="joystick-id">--</span>
+        <span id="status">Connecting…</span>
+      </div>
     </header>
 
     <div class="controls-row">

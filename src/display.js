@@ -12,18 +12,20 @@ import {
   StandardMaterial,
   TransformNode,
   PointLight,
+  Matrix,
 } from '@babylonjs/core'
 
-const statusEl = document.getElementById('status')
-const canvas = document.getElementById('renderCanvas')
+const statusEl      = document.getElementById('status')
+const joystickCountEl = document.getElementById('joystick-count')
+const labelsEl      = document.getElementById('labels')
+const canvas        = document.getElementById('renderCanvas')
 
 // ─── Babylon engine & scene ───────────────────────────────────────────────────
 const engine = new Engine(canvas, true, { antialias: true })
-const scene = new Scene(engine)
+const scene  = new Scene(engine)
 scene.clearColor = new Color4(0.05, 0.05, 0.08, 1)
 
 // ─── Camera ───────────────────────────────────────────────────────────────────
-// Orbitable — drag to inspect the scene
 const camera = new ArcRotateCamera('cam', -Math.PI / 4, Math.PI / 3.5, 24, Vector3.Zero(), scene)
 camera.lowerRadiusLimit = 8
 camera.upperRadiusLimit = 50
@@ -32,7 +34,7 @@ camera.attachControl(canvas, true)
 // ─── Lighting ─────────────────────────────────────────────────────────────────
 const hemi = new HemisphericLight('hemi', new Vector3(0, 1, 0), scene)
 hemi.intensity = 0.45
-hemi.diffuse = new Color3(0.8, 0.85, 1)
+hemi.diffuse     = new Color3(0.8, 0.85, 1)
 hemi.groundColor = new Color3(0.1, 0.1, 0.2)
 
 const sun = new DirectionalLight('sun', new Vector3(-1, -2, -1.5), scene)
@@ -50,7 +52,6 @@ arenaMat.wireframe = true
 arenaMat.emissiveColor = new Color3(0.22, 0.25, 0.5)
 arenaMesh.material = arenaMat
 
-// Floor grid (wireframe ground at bottom of box)
 const floor = MeshBuilder.CreateGround('floor', { width: ARENA, height: ARENA, subdivisions: 10 }, scene)
 floor.position.y = -HALF
 floor.isPickable = false
@@ -59,60 +60,98 @@ floorMat.wireframe = true
 floorMat.emissiveColor = new Color3(0.16, 0.16, 0.3)
 floor.material = floorMat
 
-// ─── Pyramid (sharp 4-sided, tip = front) ────────────────────────────────────
-//  Babylon's CreateCylinder with diameterTop=0 makes a cone; tessellation=4 → 4-sided pyramid.
-//  The tip is at +Y by default. We child it under a pivot node and rotate 90° on X
-//  so the tip points to +Z (forward in Babylon's left-handed system).
-const pivot = new TransformNode('pivot', scene)
+// ─── Vehicle palette ──────────────────────────────────────────────────────────
+// Each slot: [diffuse R,G,B], [emissive R,G,B], [glow R,G,B], CSS hex for label
+const PALETTE = [
+  { d: [0.36, 0.42, 0.94], e: [0.08, 0.10, 0.28], g: [0.4, 0.5, 1.0],  css: '#7b8fff' },  // blue
+  { d: [0.94, 0.32, 0.32], e: [0.28, 0.06, 0.06], g: [1.0, 0.35, 0.35], css: '#ff6060' }, // red
+  { d: [0.28, 0.90, 0.46], e: [0.05, 0.26, 0.11], g: [0.35, 1.0, 0.5],  css: '#5eff82' }, // green
+  { d: [0.80, 0.32, 0.94], e: [0.22, 0.06, 0.28], g: [0.85, 0.38, 1.0], css: '#cc60ff' }, // purple
+  { d: [0.94, 0.80, 0.22], e: [0.28, 0.22, 0.04], g: [1.0, 0.88, 0.3],  css: '#ffdc44' }, // yellow
+  { d: [0.22, 0.88, 0.90], e: [0.04, 0.24, 0.26], g: [0.3, 1.0, 1.0],   css: '#44f0ff' }, // cyan
+  { d: [0.94, 0.32, 0.74], e: [0.28, 0.06, 0.20], g: [1.0, 0.38, 0.82], css: '#ff60cc' }, // pink
+  { d: [0.94, 0.56, 0.20], e: [0.28, 0.14, 0.04], g: [1.0, 0.62, 0.28], css: '#ff9644' }, // orange
+]
 
-const pyramid = MeshBuilder.CreateCylinder('pyramid', {
-  diameterTop: 0,
-  diameterBottom: 1.0,
-  height: 2.2,
-  tessellation: 4,
-}, scene)
-pyramid.parent = pivot
-pyramid.rotation.x = Math.PI / 2   // tip now points in local +Z of pivot
+// ─── Vehicle management ────────────────────────────────────────────────────────
+const BULLET_SPEED = 18
+const MAX_BULLETS  = 30
+const MOVE_SPEED   = 6
+const ROT_SPEED    = 2
 
-const pyramidMat = new StandardMaterial('pyramidMat', scene)
-pyramidMat.diffuseColor  = new Color3(0.36, 0.42, 0.94)
-pyramidMat.emissiveColor = new Color3(0.08, 0.10, 0.28)
-pyramidMat.specularColor = new Color3(0.6, 0.7, 1.0)
-pyramidMat.specularPower = 64
-pyramid.material = pyramidMat
+// joystickId (number) -> vehicle data
+const vehicles = new Map()
 
-// Soft glow light that follows the pyramid
-const glow = new PointLight('glow', Vector3.Zero(), scene)
-glow.diffuse    = new Color3(0.4, 0.5, 1)
-glow.specular   = new Color3(0.3, 0.4, 0.9)
-glow.intensity  = 2.5
-glow.range      = 6
+function palette(joystickId) {
+  return PALETTE[(joystickId - 1) % PALETTE.length]
+}
 
-// ─── Bullet system ────────────────────────────────────────────────────────────
-const BULLET_SPEED  = 18   // units per second
-const MAX_BULLETS   = 30
+function createVehicle(joystickId) {
+  const col = palette(joystickId)
 
-// Shared red material for all bullets
-const bulletMat = new StandardMaterial('bulletMat', scene)
-bulletMat.diffuseColor  = new Color3(1, 0.12, 0.12)
-bulletMat.emissiveColor = new Color3(0.9, 0.05, 0.05)
-bulletMat.specularColor = new Color3(1, 0.4, 0.4)
+  // Stagger starting positions so vehicles don't spawn on top of each other
+  const angle  = ((joystickId - 1) / PALETTE.length) * Math.PI * 2
+  const startX = Math.sin(angle) * 3
+  const startZ = Math.cos(angle) * 3
+  const state  = { x: startX, y: 0, z: startZ, yaw: angle + Math.PI }
 
-// bullets: Array<{ mesh: Mesh, vx: number, vz: number }>
-const bullets = []
+  const pivot = new TransformNode(`pivot-${joystickId}`, scene)
 
-function spawnBullet() {
+  const pyramid = MeshBuilder.CreateCylinder(`pyramid-${joystickId}`, {
+    diameterTop: 0,
+    diameterBottom: 1.0,
+    height: 2.2,
+    tessellation: 4,
+  }, scene)
+  pyramid.parent    = pivot
+  pyramid.rotation.x = Math.PI / 2
+
+  const mat = new StandardMaterial(`mat-${joystickId}`, scene)
+  mat.diffuseColor  = new Color3(...col.d)
+  mat.emissiveColor = new Color3(...col.e)
+  mat.specularColor = new Color3(0.7, 0.75, 1.0)
+  mat.specularPower = 64
+  pyramid.material  = mat
+
+  const glow = new PointLight(`glow-${joystickId}`, Vector3.Zero(), scene)
+  glow.diffuse   = new Color3(...col.g)
+  glow.specular  = new Color3(...col.g)
+  glow.intensity = 2.5
+  glow.range     = 6
+
+  // Bullet material inherits vehicle color, fully emissive
+  const bulletMat = new StandardMaterial(`bmat-${joystickId}`, scene)
+  bulletMat.diffuseColor  = new Color3(...col.d)
+  bulletMat.emissiveColor = new Color3(...col.d)
+  bulletMat.specularColor = new Color3(1, 1, 1)
+
+  // 2D HTML label overlay
+  const label = document.createElement('div')
+  label.className = 'vehicle-label'
+  label.textContent = String(joystickId).padStart(2, '0')
+  label.style.color       = col.css
+  label.style.borderColor = col.css
+  label.style.boxShadow   = `0 0 6px ${col.css}55`
+  labelsEl.appendChild(label)
+
+  const input   = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 } }
+  const bullets = []
+
+  return { pivot, pyramid, mat, glow, bulletMat, state, input, bullets, label }
+}
+
+function spawnBullet(vehicle) {
+  const { bullets, bulletMat, pivot, state } = vehicle
+
   if (bullets.length >= MAX_BULLETS) {
-    // recycle oldest
     const old = bullets.shift()
     old.mesh.dispose()
   }
 
   const mesh = MeshBuilder.CreateSphere('bullet', { diameter: 0.28, segments: 5 }, scene)
-  mesh.material = bulletMat
+  mesh.material  = bulletMat
   mesh.isPickable = false
 
-  // Start at pyramid tip (1.1 units ahead of pivot center)
   const tipDist = 1.1
   mesh.position.set(
     pivot.position.x + Math.sin(state.yaw) * tipDist,
@@ -123,55 +162,70 @@ function spawnBullet() {
   bullets.push({ mesh, vx: Math.sin(state.yaw), vz: Math.cos(state.yaw) })
 }
 
-// ─── 3D state ─────────────────────────────────────────────────────────────────
-// Position in world units; yaw in radians (Babylon left-handed: +Y rot = CW from above)
-const state = { x: 0, y: 0, z: 0, yaw: 0 }
+function removeVehicle(joystickId) {
+  const v = vehicles.get(joystickId)
+  if (!v) return
+  v.pyramid.dispose()
+  v.pivot.dispose()
+  v.glow.dispose()
+  v.mat.dispose()
+  v.bulletMat.dispose()
+  v.bullets.forEach(b => b.mesh.dispose())
+  v.label.remove()
+  vehicles.delete(joystickId)
+}
 
-const MOVE_SPEED = 6   // units per second
-const ROT_SPEED  = 2   // radians per second
-
-// Input from socket: { move: {x, y}, look: {x, y} }
-// move.x = strafe,   move.y = forward/back
-// look.x = yaw CW+,  look.y = up/down
-let input = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 } }
-
-// ─── Render loop ──────────────────────────────────────────────────────────────
+// ─── Render loop ───────────────────────────────────────────────────────────────
 engine.runRenderLoop(() => {
-  const dt = engine.getDeltaTime() / 1000  // seconds
+  const dt = engine.getDeltaTime() / 1000
 
-  // Body-relative movement: forward direction follows current yaw
-  // Babylon left-handed Y-up: forward = (sin yaw, 0, cos yaw)
-  const fwdX =  Math.sin(state.yaw)
-  const fwdZ =  Math.cos(state.yaw)
-  const rtX  =  Math.cos(state.yaw)
-  const rtZ  = -Math.sin(state.yaw)
+  for (const [, v] of vehicles) {
+    const { state, input, pivot, glow, bullets, label } = v
 
-  state.x += (input.move.y * fwdX + input.move.x * rtX) * MOVE_SPEED * dt
-  state.z += (input.move.y * fwdZ + input.move.x * rtZ) * MOVE_SPEED * dt
-  state.y += input.look.y * MOVE_SPEED * dt
-  state.yaw += input.look.x * ROT_SPEED * dt  // right = CW
+    const fwdX =  Math.sin(state.yaw)
+    const fwdZ =  Math.cos(state.yaw)
+    const rtX  =  Math.cos(state.yaw)
+    const rtZ  = -Math.sin(state.yaw)
 
-  // Clamp inside arena (leave margin for pyramid size)
-  const M = 0.9
-  state.x = Math.max(-HALF + M, Math.min(HALF - M, state.x))
-  state.y = Math.max(-HALF + M, Math.min(HALF - M, state.y))
-  state.z = Math.max(-HALF + M, Math.min(HALF - M, state.z))
+    state.x   += (input.move.y * fwdX + input.move.x * rtX) * MOVE_SPEED * dt
+    state.z   += (input.move.y * fwdZ + input.move.x * rtZ) * MOVE_SPEED * dt
+    state.y   +=  input.look.y * MOVE_SPEED * dt
+    state.yaw +=  input.look.x * ROT_SPEED  * dt
 
-  pivot.position.set(state.x, state.y, state.z)
-  pivot.rotation.y = state.yaw
-  glow.position.copyFrom(pivot.position)
+    const M = 0.9
+    state.x = Math.max(-HALF + M, Math.min(HALF - M, state.x))
+    state.y = Math.max(-HALF + M, Math.min(HALF - M, state.y))
+    state.z = Math.max(-HALF + M, Math.min(HALF - M, state.z))
 
-  // Update bullets
-  for (let i = bullets.length - 1; i >= 0; i--) {
-    const b = bullets[i]
-    b.mesh.position.x += b.vx * BULLET_SPEED * dt
-    b.mesh.position.z += b.vz * BULLET_SPEED * dt
+    pivot.position.set(state.x, state.y, state.z)
+    pivot.rotation.y = state.yaw
+    glow.position.copyFrom(pivot.position)
 
-    // Remove when outside arena box
-    const p = b.mesh.position
-    if (Math.abs(p.x) > HALF || Math.abs(p.y) > HALF || Math.abs(p.z) > HALF) {
-      b.mesh.dispose()
-      bullets.splice(i, 1)
+    // Bullets
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const b = bullets[i]
+      b.mesh.position.x += b.vx * BULLET_SPEED * dt
+      b.mesh.position.z += b.vz * BULLET_SPEED * dt
+      const p = b.mesh.position
+      if (Math.abs(p.x) > HALF || Math.abs(p.y) > HALF || Math.abs(p.z) > HALF) {
+        b.mesh.dispose()
+        bullets.splice(i, 1)
+      }
+    }
+
+    // Project 3D position → 2D screen for label overlay
+    const proj = Vector3.Project(
+      pivot.position,
+      Matrix.Identity(),
+      scene.getTransformMatrix(),
+      camera.viewport.toGlobal(engine.getRenderWidth(), engine.getRenderHeight()),
+    )
+    if (proj.z > 0 && proj.z < 1) {
+      label.style.display = 'block'
+      label.style.left    = `${proj.x + 18}px`
+      label.style.top     = `${proj.y - 14}px`
+    } else {
+      label.style.display = 'none'
     }
   }
 
@@ -191,13 +245,35 @@ socket.on('connect', () => {
 socket.on('disconnect', () => {
   statusEl.textContent = 'Disconnected'
   statusEl.classList.remove('connected')
-  input = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 } }
+  // Stop all vehicle inputs
+  for (const [, v] of vehicles) {
+    v.input = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 } }
+  }
+})
+
+socket.on('joystick-list', (ids) => {
+  // Add vehicles for newly connected joysticks
+  for (const id of ids) {
+    if (!vehicles.has(id)) {
+      vehicles.set(id, createVehicle(id))
+    }
+  }
+  // Remove vehicles for disconnected joysticks
+  for (const id of [...vehicles.keys()]) {
+    if (!ids.includes(id)) removeVehicle(id)
+  }
+  const n = ids.length
+  joystickCountEl.textContent = n === 0
+    ? 'No joysticks'
+    : `${n} joystick${n !== 1 ? 's' : ''} connected`
 })
 
 socket.on('dot-move', (data) => {
-  input = data
+  const v = vehicles.get(data.joystickId)
+  if (v) v.input = data
 })
 
-socket.on('fire', () => {
-  spawnBullet()
+socket.on('fire', (data) => {
+  const v = vehicles.get(data.joystickId)
+  if (v) spawnBullet(v)
 })
