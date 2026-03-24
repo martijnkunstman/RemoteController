@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PS5 Controller Visualizer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f0f13;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      gap: 20px;
+      padding: 24px 24px 40px;
+    }
+
+    h1 {
+      font-size: 1.1rem;
+      font-weight: 400;
+      color: #888;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    #status {
+      font-size: 0.85rem;
+      color: #555;
+      transition: color 0.3s;
+    }
+    #status.connected { color: #4ade80; }
+
+    #controller-wrapper {
+      position: relative;
+      width: 640px;
+      height: 400px;
+    }
+
+    svg#controller {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      filter: drop-shadow(0 20px 60px rgba(0,0,0,0.8));
+    }
+
+    /* ── Controller body ── */
+    .body-fill   { fill: #1e1e28; }
+    .body-stroke { fill: none; stroke: #333340; stroke-width: 1.5; }
+    .grip-fill   { fill: #18181f; }
+
+    /* ── Buttons default ── */
+    .btn         { transition: all 0.06s ease; cursor: default; }
+    .btn-face    { fill: #2a2a38; stroke: #444455; stroke-width: 1.5; }
+    .btn-dpad    { fill: #242430; stroke: #3a3a4a; stroke-width: 1; }
+    .btn-system  { fill: #222230; stroke: #3a3a4a; stroke-width: 1; }
+    .btn-shoulder{ fill: #252535; stroke: #3a3a4a; stroke-width: 1.5; }
+    .btn-trigger { fill: #1e1e2c; stroke: #3a3a4a; stroke-width: 1.5; }
+    .btn-stick   { fill: #1a1a25; stroke: #333; stroke-width: 1.5; }
+
+    /* ── Active states ── */
+    /* FIX: compound selector — class is ON the same element, not a parent */
+    .btn-stick.stick-active  { fill: #6366f1 !important; stroke: #818cf8 !important; filter: url(#glow-purple); }
+
+    .cross-active    { fill: #5b9cf6 !important; stroke: #93c5fd !important; filter: url(#glow-blue); }
+    .circle-active   { fill: #f87171 !important; stroke: #fca5a5 !important; filter: url(#glow-red); }
+    .square-active   { fill: #f472b6 !important; stroke: #f9a8d4 !important; filter: url(#glow-pink); }
+    .triangle-active { fill: #34d399 !important; stroke: #6ee7b7 !important; filter: url(#glow-green); }
+    .dpad-active     { fill: #e2e8f0 !important; stroke: #f8fafc !important; filter: url(#glow-white); }
+    .system-active   { fill: #60a5fa !important; stroke: #93c5fd !important; filter: url(#glow-blue); }
+    .shoulder-active { fill: #a78bfa !important; stroke: #c4b5fd !important; filter: url(#glow-purple); }
+    .trigger-active  { fill: #fb923c !important; stroke: #fdba74 !important; filter: url(#glow-orange); }
+    .touchpad-active { fill: #38bdf8 !important; stroke: #7dd3fc !important; filter: url(#glow-blue); }
+    .ps-active       { fill: #818cf8 !important; stroke: #a5b4fc !important; filter: url(#glow-purple); }
+
+    /* ── Stick ── */
+    .stick-cursor { fill: #ffffff; opacity: 0.9; transition: all 0.03s; }
+    .stick-ring   { fill: none; stroke: #444; stroke-width: 1; opacity: 0.5; }
+
+    /* ── Touchpad cursor ── */
+    .tp-cursor     { fill: #38bdf8; opacity: 0; transition: opacity 0.1s; }
+    .tp-cursor-ring{ fill: none; stroke: #38bdf8; stroke-width: 1.5; opacity: 0; transition: opacity 0.1s; }
+
+    /* ── Trigger fill bar ── */
+    .trigger-bar { fill: #fb923c; opacity: 0; }
+
+    /* ── Labels ── */
+    .label {
+      fill: #888;
+      font-size: 9px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      text-anchor: middle;
+      dominant-baseline: central;
+      pointer-events: none;
+      user-select: none;
+    }
+    .label-face { font-size: 11px; font-weight: 600; }
+
+    /* ── Panels ── */
+    .panel-row {
+      display: grid;
+      gap: 8px;
+      width: 640px;
+    }
+    .panel-row.cols-4 { grid-template-columns: repeat(4, 1fr); }
+    .panel-row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .panel-row.cols-2 { grid-template-columns: 1fr 1fr; }
+
+    .card {
+      background: #1a1a22;
+      border: 1px solid #2a2a38;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .card-title {
+      color: #555;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+    .card-value {
+      color: #e2e8f0;
+      font-variant-numeric: tabular-nums;
+      font-family: 'Consolas', monospace;
+      font-size: 0.78rem;
+    }
+    .card-value.active { color: #a78bfa; }
+
+    /* ── Touchpad position card ── */
+    #tp-pad {
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: #111118;
+      border: 1px solid #2a2a38;
+      border-radius: 6px;
+      position: relative;
+      overflow: hidden;
+    }
+    #tp-dot {
+      position: absolute;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #38bdf8;
+      transform: translate(-50%, -50%);
+      left: 50%; top: 50%;
+      opacity: 0;
+      transition: opacity 0.1s;
+      box-shadow: 0 0 8px #38bdf8;
+    }
+    #tp-crosshair-h, #tp-crosshair-v {
+      position: absolute;
+      background: #2a3a48;
+    }
+    #tp-crosshair-h { width: 100%; height: 1px; top: 50%; left: 0; }
+    #tp-crosshair-v { width: 1px; height: 100%; left: 50%; top: 0; }
+
+    /* ── 3D Tilt Box ── */
+    #tilt-scene {
+      perspective: 300px;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 8px 0;
+    }
+    #tilt-box {
+      width: 100px;
+      height: 62px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #252535, #1e1e2c);
+      border: 1px solid #444455;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: #555;
+      transform-style: preserve-3d;
+      box-shadow: 0 0 20px rgba(99, 102, 241, 0.15);
+      transition: box-shadow 0.1s;
+    }
+    #tilt-box.moving {
+      box-shadow: 0 0 20px rgba(99, 102, 241, 0.45);
+    }
+
+    /* ── Axes bars ── */
+    .axes-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .axis-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.68rem;
+    }
+    .axis-label {
+      color: #555;
+      width: 80px;
+      flex-shrink: 0;
+      font-family: 'Consolas', monospace;
+      font-size: 0.66rem;
+    }
+    .axis-bar-track {
+      flex: 1;
+      height: 6px;
+      background: #111118;
+      border-radius: 3px;
+      position: relative;
+      overflow: hidden;
+    }
+    .axis-bar-fill {
+      position: absolute;
+      height: 100%;
+      border-radius: 3px;
+      top: 0;
+      transition: all 0.03s;
+    }
+    .axis-val {
+      color: #888;
+      width: 44px;
+      text-align: right;
+      font-family: 'Consolas', monospace;
+      font-size: 0.66rem;
+      flex-shrink: 0;
+    }
+
+    /* ── No-data note ── */
+    .no-data {
+      color: #444;
+      font-size: 0.75rem;
+      font-style: italic;
+      text-align: center;
+      padding: 12px 0;
+    }
+
+    /* ── Compass card ── */
+    #compass-canvas {
+      display: block;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+
+<h1>PS5 DualSense Visualizer</h1>
+<div id="status">Connect a PS5 controller and press any button</div>
+
+<!-- ── Controller SVG ── -->
+<div id="controller-wrapper">
+<svg id="controller" viewBox="0 0 640 400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="glow-purple" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-blue" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-red" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-pink" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-green" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-white" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-orange" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="tp-clip">
+      <rect x="264" y="142" width="112" height="68" rx="10"/>
+    </clipPath>
+  </defs>
+
+  <!-- Grips -->
+  <path class="grip-fill" d="M110 290 Q80 320 70 370 Q65 395 85 398 Q115 400 130 370 Q145 340 148 300 Z"/>
+  <path class="grip-fill" d="M530 290 Q560 320 570 370 Q575 395 555 398 Q525 400 510 370 Q495 340 492 300 Z"/>
+
+  <!-- Main body -->
+  <path class="body-fill" d="M148 190 Q148 120 170 90 Q192 60 240 52 L260 50 Q290 47 320 47 Q350 47 380 50 L400 52 Q448 60 470 90 Q492 120 492 190 L492 300 Q492 340 460 355 Q430 368 320 368 Q210 368 180 355 Q148 340 148 300 Z"/>
+  <path class="body-stroke" d="M148 190 Q148 120 170 90 Q192 60 240 52 L260 50 Q290 47 320 47 Q350 47 380 50 L400 52 Q448 60 470 90 Q492 120 492 190 L492 300 Q492 340 460 355 Q430 368 320 368 Q210 368 180 355 Q148 340 148 300 Z"/>
+
+  <!-- Triggers L2 / R2 -->
+  <rect id="l2-bg" class="btn btn-trigger" x="72" y="26" width="76" height="46" rx="10"/>
+  <rect class="trigger-bar" id="l2-bar" x="72" y="72" width="76" height="0" rx="10"/>
+  <rect id="r2-bg" class="btn btn-trigger" x="492" y="26" width="76" height="46" rx="10"/>
+  <rect class="trigger-bar" id="r2-bar" x="492" y="72" width="76" height="0" rx="10"/>
+  <text class="label" x="110" y="50">L2</text>
+  <text class="label" x="530" y="50">R2</text>
+
+  <!-- Bumpers L1 / R1 -->
+  <path id="l1-btn" class="btn btn-shoulder" d="M72 76 Q72 70 82 68 L148 60 L148 82 L82 90 Q72 90 72 84 Z"/>
+  <path id="r1-btn" class="btn btn-shoulder" d="M568 76 Q568 70 558 68 L492 60 L492 82 L558 90 Q568 90 568 84 Z"/>
+  <text class="label" x="110" y="76">L1</text>
+  <text class="label" x="530" y="76">R1</text>
+
+  <!-- D-Pad -->
+  <rect x="178" y="188" width="34" height="34" rx="3" fill="#1e1e28"/>
+  <rect id="dpad-up"    class="btn btn-dpad" x="185" y="162" width="20" height="28" rx="4"/>
+  <text class="label" x="195" y="176">▲</text>
+  <rect id="dpad-down"  class="btn btn-dpad" x="185" y="220" width="20" height="28" rx="4"/>
+  <text class="label" x="195" y="234">▼</text>
+  <rect id="dpad-left"  class="btn btn-dpad" x="157" y="185" width="28" height="20" rx="4"/>
+  <text class="label" x="171" y="195">◀</text>
+  <rect id="dpad-right" class="btn btn-dpad" x="205" y="185" width="28" height="20" rx="4"/>
+  <text class="label" x="219" y="195">▶</text>
+
+  <!-- Left Stick -->
+  <circle class="stick-ring" cx="222" cy="285" r="28"/>
+  <circle id="lstick" class="btn btn-stick" cx="222" cy="285" r="22"/>
+  <circle id="lstick-cursor" class="stick-cursor" cx="222" cy="285" r="5"/>
+  <text class="label" x="222" y="285">L3</text>
+
+  <!-- Right Stick -->
+  <circle class="stick-ring" cx="390" cy="285" r="28"/>
+  <circle id="rstick" class="btn btn-stick" cx="390" cy="285" r="22"/>
+  <circle id="rstick-cursor" class="stick-cursor" cx="390" cy="285" r="5"/>
+  <text class="label" x="390" y="285">R3</text>
+
+  <!-- Touchpad -->
+  <rect id="touchpad" class="btn btn-system" x="262" y="140" width="116" height="72" rx="12"/>
+  <!-- Touchpad touch cursor (inside clipped area) -->
+  <g clip-path="url(#tp-clip)">
+    <circle id="tp-cursor-ring" class="tp-cursor-ring" cx="320" cy="176" r="8"/>
+    <circle id="tp-cursor"      class="tp-cursor"      cx="320" cy="176" r="4"/>
+  </g>
+  <text class="label" x="320" y="176" id="tp-label">TOUCH</text>
+
+  <!-- Create / Options -->
+  <rect id="create-btn"  class="btn btn-system" x="218" y="148" width="32" height="14" rx="7"/>
+  <text class="label" x="234" y="155" font-size="7">CREATE</text>
+  <rect id="options-btn" class="btn btn-system" x="390" y="148" width="32" height="14" rx="7"/>
+  <text class="label" x="406" y="155" font-size="7">OPTIONS</text>
+
+  <!-- PS Button -->
+  <circle id="ps-btn"   class="btn btn-system" cx="320" cy="232" r="16"/>
+  <text class="label" x="320" y="232" font-size="13">⏻</text>
+
+  <!-- Mute Button -->
+  <circle id="mute-btn" class="btn btn-system" cx="320" cy="332" r="10"/>
+  <text class="label" x="320" y="332" font-size="8">🎤</text>
+
+  <!-- Face Buttons -->
+  <circle id="cross-btn"    class="btn btn-face" cx="432" cy="218" r="14"/>
+  <text class="label label-face" x="432" y="218" fill="#93c5fd">✕</text>
+  <circle id="circle-btn"   class="btn btn-face" cx="458" cy="193" r="14"/>
+  <text class="label label-face" x="458" y="193" fill="#fca5a5">○</text>
+  <circle id="square-btn"   class="btn btn-face" cx="406" cy="193" r="14"/>
+  <text class="label label-face" x="406" y="193" fill="#f9a8d4">□</text>
+  <circle id="triangle-btn" class="btn btn-face" cx="432" cy="168" r="14"/>
+  <text class="label label-face" x="432" y="168" fill="#6ee7b7">△</text>
+</svg>
+</div>
+
+<!-- ── Row 1: stick / trigger / button info ── -->
+<div class="panel-row cols-4">
+  <div class="card">
+    <div class="card-title">Left Stick</div>
+    <div class="card-value" id="info-lstick">X:  0.00  Y:  0.00</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Right Stick</div>
+    <div class="card-value" id="info-rstick">X:  0.00  Y:  0.00</div>
+  </div>
+  <div class="card">
+    <div class="card-title">L2 / R2</div>
+    <div class="card-value" id="info-triggers">L: 0.00  R: 0.00</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Active Buttons</div>
+    <div class="card-value" id="info-buttons">—</div>
+  </div>
+</div>
+
+<!-- ── Row 2: touchpad pos + tilt box + compass ── -->
+<div class="panel-row cols-3">
+
+  <!-- Touchpad position -->
+  <div class="card">
+    <div class="card-title">Touchpad Position</div>
+    <div id="tp-pad">
+      <div id="tp-crosshair-h"></div>
+      <div id="tp-crosshair-v"></div>
+      <div id="tp-dot"></div>
+    </div>
+    <div class="card-value" id="info-tp" style="margin-top:6px">X:  0.00  Y:  0.00</div>
+    <div id="tp-note" class="no-data" style="display:none">Not exposed via Gamepad API<br>in this browser / driver combo</div>
+  </div>
+
+  <!-- 3D Tilt -->
+  <div class="card">
+    <div class="card-title">Orientation / Tilt</div>
+    <div id="tilt-scene">
+      <div id="tilt-box">PS5</div>
+    </div>
+    <div class="card-value" id="info-tilt" style="margin-top:4px; font-size:0.72rem">
+      pitch:  0.00°  roll:  0.00°
+    </div>
+    <div id="tilt-note" class="no-data" style="display:none">No motion axes exposed</div>
+  </div>
+
+  <!-- Gyro / Accel / Compass raw -->
+  <div class="card">
+    <div class="card-title">Motion Sensors</div>
+    <div id="motion-axes" class="axes-grid"></div>
+    <div id="motion-note" class="no-data">Waiting for controller…</div>
+  </div>
+
+</div>
+
+<!-- ── Row 3: all raw axes (auto-generated) ── -->
+<div class="panel-row cols-2" id="raw-axes-row" style="display:none">
+  <div class="card" id="raw-axes-left">
+    <div class="card-title">All Axes (left)</div>
+    <div class="axes-grid" id="raw-axes-left-grid"></div>
+  </div>
+  <div class="card" id="raw-axes-right">
+    <div class="card-title">All Axes (right)</div>
+    <div class="axes-grid" id="raw-axes-right-grid"></div>
+  </div>
+</div>
+
+<script>
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const DEAD = 0.04;
+const dead = v => Math.abs(v) < DEAD ? 0 : v;
+const sgn  = v => v >= 0 ? ' ' : '';
+const fmt2 = v => sgn(v) + v.toFixed(2);
+const fmt1 = v => sgn(v) + v.toFixed(1);
+
+// ── Button map ───────────────────────────────────────────────────────────────
+const BUTTONS = {
+  0:  { el: $('cross-btn'),    cls: 'cross-active' },
+  1:  { el: $('circle-btn'),   cls: 'circle-active' },
+  2:  { el: $('square-btn'),   cls: 'square-active' },
+  3:  { el: $('triangle-btn'), cls: 'triangle-active' },
+  4:  { el: $('l1-btn'),       cls: 'shoulder-active' },
+  5:  { el: $('r1-btn'),       cls: 'shoulder-active' },
+  6:  { el: $('l2-bg'),        cls: 'trigger-active' },
+  7:  { el: $('r2-bg'),        cls: 'trigger-active' },
+  8:  { el: $('create-btn'),   cls: 'system-active' },
+  9:  { el: $('options-btn'),  cls: 'system-active' },
+  10: { el: $('lstick'),       cls: 'stick-active' },   // fixed: class goes ON the circle
+  11: { el: $('rstick'),       cls: 'stick-active' },
+  12: { el: $('dpad-up'),      cls: 'dpad-active' },
+  13: { el: $('dpad-down'),    cls: 'dpad-active' },
+  14: { el: $('dpad-left'),    cls: 'dpad-active' },
+  15: { el: $('dpad-right'),   cls: 'dpad-active' },
+  16: { el: $('ps-btn'),       cls: 'ps-active' },
+  17: { el: $('touchpad'),     cls: 'touchpad-active' },
+  18: { el: $('mute-btn'),     cls: 'system-active' },
+};
+
+const BUTTON_NAMES = {
+  0:'✕', 1:'○', 2:'□', 3:'△',
+  4:'L1', 5:'R1', 6:'L2', 7:'R2',
+  8:'Create', 9:'Options', 10:'L3', 11:'R3',
+  12:'D↑', 13:'D↓', 14:'D←', 15:'D→',
+  16:'PS', 17:'Touch', 18:'Mute',
+};
+
+// ── Axis label heuristics ────────────────────────────────────────────────────
+// Chrome on Windows with PS5 DualSense commonly exposes:
+//   4 axes:  [lx, ly, rx, ry]
+//   6 axes:  + [touchX, touchY]
+//  10 axes:  + [gyroX, gyroY, gyroZ, accelX, accelY, accelZ]  (or 4+6)
+// Chrome with motion extension / some builds may expose more.
+// NOTE: Compass (magnetometer) is NOT exposed through the Gamepad API.
+function axisLabel(i, total) {
+  const base = ['L-Stick X', 'L-Stick Y', 'R-Stick X', 'R-Stick Y'];
+  if (i < 4) return base[i];
+  const extra = i - 4;
+  if (total >= 10) {
+    const labels10 = ['Touch X', 'Touch Y', 'Gyro X', 'Gyro Y', 'Gyro Z', 'Accel X', 'Accel Y', 'Accel Z'];
+    return labels10[extra] || `Axis ${i}`;
+  }
+  if (total === 6) {
+    return ['Touch X', 'Touch Y'][extra] || `Axis ${i}`;
+  }
+  return `Axis ${i}`;
+}
+
+function axisColor(i, total) {
+  if (i < 4) return '#6366f1';
+  const extra = i - 4;
+  if (total >= 10) {
+    if (extra < 2)  return '#38bdf8'; // touchpad
+    if (extra < 5)  return '#fb923c'; // gyro
+    return '#4ade80';                 // accel
+  }
+  if (total === 6) return '#38bdf8';
+  return '#888';
+}
+
+// ── Raw-axes DOM (built once, updated every frame) ───────────────────────────
+let rawAxisEls = [];  // [{fill, val}]
+
+function buildRawAxes(count) {
+  rawAxisEls = [];
+  const leftGrid  = $('raw-axes-left-grid');
+  const rightGrid = $('raw-axes-right-grid');
+  leftGrid.innerHTML = '';
+  rightGrid.innerHTML = '';
+  $('raw-axes-left').querySelector('.card-title').textContent  = `Sticks (axes 0–3)`;
+  $('raw-axes-right').querySelector('.card-title').textContent = `Extended axes (4–${count - 1})`;
+  $('raw-axes-row').style.display = '';
+
+  for (let i = 0; i < count; i++) {
+    const grid  = i < 4 ? leftGrid : rightGrid;
+    const label = axisLabel(i, count);
+    const color = axisColor(i, count);
+
+    const row = document.createElement('div');
+    row.className = 'axis-row';
+    row.innerHTML = `
+      <span class="axis-label">${label}</span>
+      <div class="axis-bar-track">
+        <div class="axis-bar-fill" style="background:${color}; left:50%; width:0"></div>
+      </div>
+      <span class="axis-val">0.00</span>`;
+    grid.appendChild(row);
+
+    rawAxisEls.push({
+      fill: row.querySelector('.axis-bar-fill'),
+      val:  row.querySelector('.axis-val'),
+    });
+  }
+}
+
+function updateRawAxes(axes) {
+  for (let i = 0; i < axes.length && i < rawAxisEls.length; i++) {
+    const v = axes[i];
+    const { fill, val } = rawAxisEls[i];
+    val.textContent = v.toFixed(3);
+    const pct = Math.abs(v) * 50;
+    if (v >= 0) {
+      fill.style.left  = '50%';
+      fill.style.width = pct + '%';
+    } else {
+      fill.style.left  = (50 - pct) + '%';
+      fill.style.width = pct + '%';
+    }
+  }
+}
+
+// ── Motion axes DOM (built once) ─────────────────────────────────────────────
+let motionAxisEls = [];
+let motionBuilt   = false;
+
+function buildMotionAxes(startIdx, count, total) {
+  motionBuilt = true;
+  motionAxisEls = [];
+  const grid = $('motion-axes');
+  grid.innerHTML = '';
+  $('motion-note').style.display = 'none';
+
+  for (let i = startIdx; i < startIdx + count && i < total; i++) {
+    const label = axisLabel(i, total);
+    const color = axisColor(i, total);
+    const row = document.createElement('div');
+    row.className = 'axis-row';
+    row.innerHTML = `
+      <span class="axis-label">${label}</span>
+      <div class="axis-bar-track">
+        <div class="axis-bar-fill" style="background:${color}; left:50%; width:0"></div>
+      </div>
+      <span class="axis-val">0.00</span>`;
+    grid.appendChild(row);
+    motionAxisEls.push({
+      idx:  i,
+      fill: row.querySelector('.axis-bar-fill'),
+      val:  row.querySelector('.axis-val'),
+    });
+  }
+}
+
+function updateMotionAxes(axes) {
+  for (const { idx, fill, val } of motionAxisEls) {
+    const v = axes[idx] || 0;
+    val.textContent = v.toFixed(3);
+    const pct = Math.abs(v) * 50;
+    if (v >= 0) { fill.style.left = '50%'; fill.style.width = pct + '%'; }
+    else        { fill.style.left = (50 - pct) + '%'; fill.style.width = pct + '%'; }
+  }
+}
+
+// ── Stick helper ─────────────────────────────────────────────────────────────
+function applyStick(cursorId, cx, cy, ax, ay, radius = 14) {
+  const x = dead(ax), y = dead(ay);
+  const c = $(cursorId);
+  c.setAttribute('cx', cx + x * radius);
+  c.setAttribute('cy', cy + y * radius);
+}
+
+// ── Main state ───────────────────────────────────────────────────────────────
+let connected    = false;
+let axesBuilt    = false;
+let lastAxCount  = 0;
+let tpAvailable  = false;
+let tpAxisX = 4, tpAxisY = 5;
+
+// Touchpad: SVG rect is x=262, y=140, w=116, h=72 (inner usable: +8px margin)
+const TP_SVG = { x: 264, y: 142, w: 112, h: 68 };
+
+function poll() {
+  const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = null;
+  for (const g of gamepads) { if (g) { gp = g; break; } }
+
+  if (!gp) { requestAnimationFrame(poll); return; }
+
+  if (!connected) {
+    connected = true;
+    $('status').textContent = `Connected: ${gp.id}`;
+    $('status').classList.add('connected');
+  }
+
+  const axes   = Array.from(gp.axes);
+  const nAxes  = axes.length;
+
+  // ── Build raw-axes UI once (or if axis count changes) ──
+  if (!axesBuilt || nAxes !== lastAxCount) {
+    lastAxCount = nAxes;
+    axesBuilt   = true;
+    buildRawAxes(nAxes);
+
+    // Determine touchpad axes
+    if (nAxes >= 6) {
+      tpAvailable = true;
+      tpAxisX = 4; tpAxisY = 5;
+      $('tp-note').style.display = 'none';
+    } else {
+      tpAvailable = false;
+      $('tp-dot').style.opacity = '0';
+      $('tp-note').style.display = '';
+    }
+
+    // Determine motion axes
+    // If ≥ 10 axes: motion starts at 6 (after touchpad 4,5)
+    // If ≥ 6 and < 10: maybe gyro at 4 (no dedicated touchpad slot)
+    if (nAxes >= 10 && !motionBuilt) {
+      buildMotionAxes(6, nAxes - 6, nAxes);
+    } else if (nAxes >= 6 && nAxes < 10 && !motionBuilt) {
+      // Could be gyro/accel starting right after sticks if 8 axes
+      if (nAxes === 8) buildMotionAxes(4, 4, nAxes);
+    } else if (nAxes === 4 && !motionBuilt) {
+      $('motion-note').textContent = 'No motion data via Gamepad API — browser / driver may not expose gyro/accel for this controller.';
+      $('tilt-note').style.display = '';
+      $('tilt-box').style.display  = 'none';
+    }
+  }
+
+  updateRawAxes(axes);
+  if (motionBuilt) updateMotionAxes(axes);
+
+  // ── Buttons ──
+  const activeNames = [];
+  for (let i = 0; i < gp.buttons.length; i++) {
+    const b = gp.buttons[i];
+    const pressed = b.pressed || b.value > 0.05;
+    const info = BUTTONS[i];
+    if (!info) continue;
+    if (pressed) {
+      info.el.classList.add(info.cls);
+      if (BUTTON_NAMES[i]) activeNames.push(BUTTON_NAMES[i]);
+    } else {
+      info.el.classList.remove(info.cls);
+    }
+  }
+
+  // ── Trigger fill bars (fills from bottom) ──
+  const l2v = gp.buttons[6] ? clamp(gp.buttons[6].value, 0, 1) : 0;
+  const r2v = gp.buttons[7] ? clamp(gp.buttons[7].value, 0, 1) : 0;
+  function setTrigBar(id, x, val) {
+    const el = $(id);
+    const h  = val * 46;
+    el.setAttribute('height', h);
+    el.setAttribute('y', 72 - h);
+    el.setAttribute('x', x);
+    el.style.opacity = val > 0.02 ? '0.85' : '0';
+  }
+  setTrigBar('l2-bar', 72, l2v);
+  setTrigBar('r2-bar', 492, r2v);
+
+  // ── Sticks ──
+  const lx = axes[0] || 0, ly = axes[1] || 0;
+  const rx = axes[2] || 0, ry = axes[3] || 0;
+  applyStick('lstick-cursor', 222, 285, lx, ly);
+  applyStick('rstick-cursor', 390, 285, rx, ry);
+
+  // ── Touchpad position ──
+  const tpPressed = gp.buttons[17] && (gp.buttons[17].pressed || gp.buttons[17].value > 0.05);
+  if (tpAvailable) {
+    const tx = axes[tpAxisX] || 0;
+    const ty = axes[tpAxisY] || 0;
+    const active = Math.abs(tx) > 0.01 || Math.abs(ty) > 0.01 || tpPressed;
+
+    // SVG cursor
+    const svgX = TP_SVG.x + ((tx + 1) / 2) * TP_SVG.w;
+    const svgY = TP_SVG.y + ((ty + 1) / 2) * TP_SVG.h;
+    $('tp-cursor').setAttribute('cx', svgX);
+    $('tp-cursor').setAttribute('cy', svgY);
+    $('tp-cursor-ring').setAttribute('cx', svgX);
+    $('tp-cursor-ring').setAttribute('cy', svgY);
+    $('tp-cursor').style.opacity      = active ? '0.9' : '0';
+    $('tp-cursor-ring').style.opacity = active ? '0.5' : '0';
+    $('tp-label').style.opacity       = active ? '0'   : '1';
+
+    // HTML touchpad widget
+    const dotEl = $('tp-dot');
+    dotEl.style.left    = ((tx + 1) / 2 * 100) + '%';
+    dotEl.style.top     = ((ty + 1) / 2 * 100) + '%';
+    dotEl.style.opacity = active ? '1' : '0';
+
+    $('info-tp').textContent = `X:${fmt2(tx)}  Y:${fmt2(ty)}`;
+  }
+
+  // ── Tilt / orientation (tries gyro axes if available) ──
+  // Common layout when 10+ axes: [lx,ly,rx,ry, tpx,tpy, gyroX,gyroY,gyroZ, accelX,accelY,accelZ]
+  // We use accel for tilt (accel gives gravity direction = static tilt)
+  let pitch = 0, roll = 0;
+  if (nAxes >= 12) {
+    // accel at indices 9,10,11 → pitch=accelX, roll=accelY (scaled to degrees)
+    const ax = axes[9] || 0, ay = axes[10] || 0;
+    pitch = ax * 45;
+    roll  = ay * 45;
+  } else if (nAxes === 10) {
+    const ax = axes[7] || 0, ay = axes[8] || 0;
+    pitch = ax * 45; roll = ay * 45;
+  }
+  const isMoving = Math.abs(pitch) > 1 || Math.abs(roll) > 1;
+  const tiltBox  = $('tilt-box');
+  tiltBox.style.transform = `rotateX(${(-pitch).toFixed(1)}deg) rotateY(${roll.toFixed(1)}deg)`;
+  tiltBox.classList.toggle('moving', isMoving);
+  if (nAxes >= 8) {
+    $('info-tilt').textContent = `pitch:${fmt1(pitch)}°  roll:${fmt1(roll)}°`;
+    $('tilt-note').style.display = 'none';
+    tiltBox.style.display = '';
+  }
+
+  // ── Info panel ──
+  $('info-lstick').textContent   = `X:${fmt2(dead(lx))}  Y:${fmt2(dead(ly))}`;
+  $('info-rstick').textContent   = `X:${fmt2(dead(rx))}  Y:${fmt2(dead(ry))}`;
+  $('info-triggers').textContent = `L:${l2v.toFixed(2)}  R:${r2v.toFixed(2)}`;
+  const btnEl = $('info-buttons');
+  if (activeNames.length) {
+    btnEl.textContent = activeNames.join('  ');
+    btnEl.classList.add('active');
+  } else {
+    btnEl.textContent = '—';
+    btnEl.classList.remove('active');
+  }
+
+  requestAnimationFrame(poll);
+}
+
+window.addEventListener('gamepadconnected',    e => { $('status').textContent = `Connected: ${e.gamepad.id}`; $('status').classList.add('connected'); });
+window.addEventListener('gamepaddisconnected', () => { connected = false; axesBuilt = false; motionBuilt = false; $('status').textContent = 'Controller disconnected'; $('status').classList.remove('connected'); });
+
+requestAnimationFrame(poll);
+</script>
+</body>
+</html>
