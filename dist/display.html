@@ -42,6 +42,38 @@
         font-weight: 600;
       }
 
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      #joystick-count {
+        font-size: 0.78rem;
+        padding: 4px 10px;
+        border-radius: 20px;
+        background: #1e1e2e;
+        color: #888;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .auto-rotate-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.78rem;
+        color: #888;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .auto-rotate-label input[type="checkbox"] {
+        accent-color: #5b6af0;
+        width: 14px;
+        height: 14px;
+        cursor: pointer;
+      }
+
       #status {
         font-size: 0.8rem;
         padding: 4px 10px;
@@ -55,25 +87,65 @@
         color: #4ade80;
       }
 
-      #renderCanvas {
+      /* Canvas + label overlay wrapper */
+      .canvas-wrapper {
         flex: 1;
+        position: relative;
+        overflow: hidden;
+      }
+
+      #renderCanvas {
         width: 100%;
+        height: 100%;
         display: block;
         outline: none;
       }
+
+      /* 2D label overlay — sits above the canvas, no pointer events */
+      #labels {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      .vehicle-label {
+        position: absolute;
+        font-family: 'Courier New', monospace;
+        font-size: 1rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        background: rgba(5, 5, 10, 0.72);
+        padding: 2px 7px;
+        border-radius: 5px;
+        border: 1px solid;
+        white-space: nowrap;
+        display: none;
+        transform: translateY(-50%);
+      }
     </style>
-    <script type="module" crossorigin src="/assets/display-LPA-tkil.js"></script>
+    <script type="module" crossorigin src="/assets/display-C1OCRUKX.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-B5Qt9EMX.js">
     <link rel="modulepreload" crossorigin href="/assets/index-BcxXcwBL.js">
+    <link rel="modulepreload" crossorigin href="/assets/nativeXRFrame-CWbpTJjq.js">
   </head>
   <body>
     <header>
       <a href="/">← Home</a>
       <h2>🎯 3D Display</h2>
-      <span id="status">Connecting…</span>
+      <div class="header-right">
+        <label class="auto-rotate-label">
+          <input type="checkbox" id="auto-rotate" />
+          Auto-rotate
+        </label>
+        <span id="joystick-count">No joysticks</span>
+        <span id="status">Connecting…</span>
+      </div>
     </header>
 
-    <canvas id="renderCanvas" touch-action="none"></canvas>
+    <div class="canvas-wrapper">
+      <canvas id="renderCanvas" touch-action="none"></canvas>
+      <div id="labels"></div>
+    </div>
 
   </body>
 </html>
