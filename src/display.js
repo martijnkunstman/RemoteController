@@ -23,7 +23,7 @@ const autoRotateEl    = document.getElementById('auto-rotate')
 // ─── Babylon engine & scene ───────────────────────────────────────────────────
 const engine = new Engine(canvas, true, { antialias: true })
 const scene  = new Scene(engine)
-scene.clearColor = new Color4(0.01, 0.01, 0.01, 1)
+scene.clearColor = new Color4(0.07, 0.06, 0.05, 1)
 
 // ─── Camera ───────────────────────────────────────────────────────────────────
 const camera = new ArcRotateCamera('cam', -Math.PI / 4, Math.PI / 3.5, 80, Vector3.Zero(), scene)
@@ -42,9 +42,9 @@ autoRotateEl.addEventListener('change', () => {
 
 // ─── Cave lighting ────────────────────────────────────────────────────────────
 const hemi = new HemisphericLight('hemi', new Vector3(0, 1, 0), scene)
-hemi.intensity   = 0.05
-hemi.diffuse     = new Color3(0.3, 0.25, 0.2)
-hemi.groundColor = new Color3(0.02, 0.01, 0.01)
+hemi.intensity   = 0.30
+hemi.diffuse     = new Color3(0.55, 0.48, 0.38)
+hemi.groundColor = new Color3(0.12, 0.09, 0.06)
 
 // 4 warm torch-like point lights — repositioned after world is received
 const torchColors = [
@@ -58,30 +58,28 @@ const torchLights = torchColors.map((col, i) => {
   light.diffuse   = col
   light.specular  = col
   light.intensity = 3.0
-  light.range     = 24
+  light.range     = 32
   return light
 })
 
 // ─── Cave fog ─────────────────────────────────────────────────────────────────
 scene.fogMode    = Scene.FOGMODE_EXP2
-scene.fogColor   = new Color3(0.01, 0.01, 0.01)
-scene.fogDensity = 0.035
+scene.fogColor   = new Color3(0.07, 0.06, 0.05)
+scene.fogDensity = 0.018
 
 // ─── Voxel world constants (must match server/index.js) ───────────────────────
-const GRID = 25
+const GRID = 32
 const CELL = 2
-const HALF = GRID * CELL / 2   // 25
+const HALF = GRID * CELL / 2   // 32
 
 let worldGrid = null
 
 function isSolid(cx, cy, cz) {
   if (!worldGrid) return false
-  if (cx < 0 || cx >= GRID || cy < 0 || cy >= GRID || cz < 0 || cz >= GRID) return true
-  return worldGrid[cx + cy * GRID + cz * GRID * GRID] === 1
-}
-
-function isOuter(cx, cy, cz) {
-  return cx === 0 || cx === GRID - 1 || cy === 0 || cy === GRID - 1 || cz === 0 || cz === GRID - 1
+  if (cy < 0 || cy >= GRID) return true                    // Y out-of-bounds = solid ceiling/floor
+  const wx = ((cx % GRID) + GRID) % GRID                  // wrap X
+  const wz = ((cz % GRID) + GRID) % GRID                  // wrap Z
+  return worldGrid[wx + cy * GRID + wz * GRID * GRID] === 1
 }
 
 function cellCenter(cx, cy, cz) {
@@ -129,13 +127,20 @@ function buildVoxelWorld(grid) {
   const faceDir = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]
   let count = 0
 
+  // 9 tile offsets in XZ for wrap-around rendering
+  const WORLD_SIZE = GRID * CELL
+  const tileOffsets = []
+  for (let tz = -1; tz <= 1; tz++)
+    for (let tx = -1; tx <= 1; tx++)
+      tileOffsets.push([tx * WORLD_SIZE, tz * WORLD_SIZE])
+
   for (let z = 0; z < GRID; z++)
     for (let y = 0; y < GRID; y++)
       for (let x = 0; x < GRID; x++) {
         if (!isSolid(x, y, z)) continue
 
-        // DISPLAY: skip outer shell — lets arc-rotate camera see inside
-        if (isOuter(x, y, z)) continue
+        // DISPLAY: skip ceiling layer — arc-rotate camera looks down from above
+        if (y === GRID - 1) continue
 
         // Only render surface blocks (at least one face-adjacent empty cell)
         let surface = false
@@ -146,12 +151,15 @@ function buildVoxelWorld(grid) {
 
         // Pick material variant by position for natural color variation
         const matIdx = (x * 7 + y * 13 + z * 5) % 3
-        const inst = roots[matIdx].createInstance(`v${count++}`)
-        inst.position = cellCenter(x, y, z)
-        inst.isPickable = false
+        const base   = cellCenter(x, y, z)
+        for (const [ox, oz] of tileOffsets) {
+          const inst = roots[matIdx].createInstance(`v${count++}`)
+          inst.position.set(base.x + ox, base.y, base.z + oz)
+          inst.isPickable = false
+        }
       }
 
-  console.log(`[Voxels] ${count} surface instances (display, no outer shell)`)
+  console.log(`[Voxels] ${count} surface instances across 9 tiles (display)`)
   repositionTorches()
 }
 
@@ -159,15 +167,15 @@ function repositionTorches() {
   if (!worldGrid) return
   // Distribute torches across 4 quadrants of the cave (XZ plane)
   const quads = [[], [], [], []]
-  for (let z = 1; z < GRID - 1; z++)
+  for (let z = 0; z < GRID; z++)
     for (let y = 1; y < GRID - 1; y++)
-      for (let x = 1; x < GRID - 1; x++) {
+      for (let x = 0; x < GRID; x++) {
         if (isSolid(x, y, z)) continue
         const q = (x < GRID / 2 ? 0 : 1) + (z < GRID / 2 ? 0 : 2)
         quads[q].push([x, y, z])
       }
   torchLights.forEach((light, i) => {
-    const pool = quads[i].length > 0 ? quads[i] : quads.find(q => q.length > 0) || [[12, 12, 12]]
+    const pool = quads[i].length > 0 ? quads[i] : quads.find(q => q.length > 0) || [[16, 16, 16]]
     const [cx, cy, cz] = pool[Math.floor(Math.random() * pool.length)]
     light.position = cellCenter(cx, cy, cz)
   })
@@ -252,6 +260,7 @@ function spawnBullet(vehicle) {
 
   if (bullets.length >= MAX_BULLETS) {
     const old = bullets.shift()
+    old.light.dispose()
     old.mesh.dispose()
   }
 
@@ -266,7 +275,13 @@ function spawnBullet(vehicle) {
     pivot.position.z + Math.cos(state.yaw) * tipDist,
   )
 
-  bullets.push({ mesh, vx: Math.sin(state.yaw), vz: Math.cos(state.yaw) })
+  const light = new PointLight('bulletLight', mesh.position.clone(), scene)
+  light.diffuse   = new Color3(1.0, 0.25, 0.05)
+  light.specular  = new Color3(1.0, 0.25, 0.05)
+  light.intensity = 1.8
+  light.range     = 8
+
+  bullets.push({ mesh, vx: Math.sin(state.yaw), vz: Math.cos(state.yaw), light })
 }
 
 function removeVehicle(joystickId) {
@@ -276,7 +291,7 @@ function removeVehicle(joystickId) {
   v.pivot.dispose()
   v.glow.dispose()
   v.mat.dispose()
-  v.bullets.forEach(b => b.mesh.dispose())
+  v.bullets.forEach(b => { b.light.dispose(); b.mesh.dispose() })
   v.label.remove()
   vehicles.delete(joystickId)
 }
@@ -297,7 +312,7 @@ engine.runRenderLoop(() => {
 
       if (b.hitTimer !== undefined) {
         b.hitTimer -= dt
-        if (b.hitTimer <= 0) { b.mesh.dispose(); bullets.splice(i, 1) }
+        if (b.hitTimer <= 0) { b.light.dispose(); b.mesh.dispose(); bullets.splice(i, 1) }
         continue
       }
 
@@ -305,14 +320,21 @@ engine.runRenderLoop(() => {
       b.mesh.position.z += b.vz * BULLET_SPEED * dt
       const p = b.mesh.position
 
-      // Hard boundary escape — voxel walls should catch first
-      if (Math.abs(p.x) > HALF || Math.abs(p.y) > HALF || Math.abs(p.z) > HALF) {
-        b.mesh.dispose(); bullets.splice(i, 1); continue
+      // XZ: wrap bullet around world edges
+      const W = GRID * CELL
+      b.mesh.position.x = ((p.x + HALF) % W + W) % W - HALF
+      b.mesh.position.z = ((p.z + HALF) % W + W) % W - HALF
+      // Y: dispose if bullet escapes ceiling/floor
+      if (Math.abs(p.y) > HALF) {
+        b.light.dispose(); b.mesh.dispose(); bullets.splice(i, 1); continue
       }
+
+      b.light.position.copyFrom(b.mesh.position)
 
       if (bulletHitsWorld(p)) {
         b.hitTimer = 0.12
         b.mesh.scaling.setAll(3)
+        b.light.intensity = 0
         continue
       }
     }
