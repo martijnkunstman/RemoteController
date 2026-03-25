@@ -55,27 +55,22 @@ scene.fogColor   = new Color3(0, 0, 0)
 scene.fogDensity = 0.030
 
 // ─── Voxel world constants (must match server/index.js) ───────────────────────
-const GRID = 64
-const CELL = 2
-const HALF = GRID * CELL / 2   // 64
+const GRID   = 64
+const GRID_Y = 32
+const CELL   = 2
+const HALF   = GRID   * CELL / 2   // 64  (XZ)
+const HALF_Y = GRID_Y * CELL / 2   // 32  (Y)
 
 let worldGrid = null
 
 function isSolid(cx, cy, cz) {
   if (!worldGrid) return false
-  if (cy < 0 || cy >= GRID) return true                    // Y out-of-bounds = solid ceiling/floor
+  if (cy < 0 || cy >= GRID_Y) return true                  // Y out-of-bounds = solid ceiling/floor
   const wx = ((cx % GRID) + GRID) % GRID                  // wrap X
   const wz = ((cz % GRID) + GRID) % GRID                  // wrap Z
-  return worldGrid[wx + cy * GRID + wz * GRID * GRID] === 1
+  return worldGrid[wx + cy * GRID + wz * GRID * GRID_Y] === 1
 }
 
-function cellCenter(cx, cy, cz) {
-  return new Vector3(
-    (cx + 0.5) * CELL - HALF,
-    (cy + 0.5) * CELL - HALF,
-    (cz + 0.5) * CELL - HALF,
-  )
-}
 
 // ─── Wireframe shaders (unlit, UV edge detection, depth fog) ─────────────────
 Effect.ShadersStore['wireVertexShader'] = `
@@ -103,11 +98,14 @@ Effect.ShadersStore['wireFragmentShader'] = `
   uniform float fogDensity;
   void main(void) {
     float minEdge = min(min(vUV.x, 1.0 - vUV.x), min(vUV.y, 1.0 - vUV.y));
-    if (minEdge > edgeWidth) discard;
     float depth = gl_FragCoord.z / gl_FragCoord.w;
     float f = fogDensity * depth;
     float fogFactor = clamp(exp(-f * f), 0.0, 1.0);
-    gl_FragColor = vec4(mix(fogColor, wireColor, fogFactor), 1.0);
+    if (minEdge > edgeWidth) {
+      gl_FragColor = vec4(fogColor, 1.0);
+    } else {
+      gl_FragColor = vec4(mix(fogColor, wireColor, fogFactor), 1.0);
+    }
   }
 `
 
@@ -132,46 +130,90 @@ function buildVoxelWorld(grid) {
   wireMat.setColor3('fogColor',  new Color3(0, 0, 0))
   wireMat.setFloat('fogDensity', scene.fogDensity)
 
-  const root = MeshBuilder.CreateBox('wireRoot', { size: CELL - 0.05 }, scene)
+  const root = MeshBuilder.CreateBox('wireRoot', { size: 1 }, scene)
   root.material   = wireMat
   root.isVisible  = false
   root.isPickable = false
   voxelRoots = [root]
 
   const faceDir = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]
-  let count = 0
+  const strideY = GRID
+  const strideZ = GRID * GRID_Y
 
-  // 9 tile offsets in XZ for wrap-around rendering
+  // ─── Mark surface voxels ─────────────────────────────────────────────────────
+  const isSurf = new Uint8Array(GRID * GRID_Y * GRID)
+  for (let z = 0; z < GRID; z++)
+    for (let y = 0; y < GRID_Y; y++)
+      for (let x = 0; x < GRID; x++) {
+        if (!isSolid(x, y, z)) continue
+        if (y === GRID_Y - 1) continue   // display: skip ceiling
+        for (const [dx, dy, dz] of faceDir) {
+          if (!isSolid(x + dx, y + dy, z + dz)) {
+            isSurf[x + y * strideY + z * strideZ] = 1
+            break
+          }
+        }
+      }
+
+  // ─── 3-D greedy merge ────────────────────────────────────────────────────────
+  const done = new Uint8Array(GRID * GRID_Y * GRID)
   const WORLD_SIZE = GRID * CELL
   const tileOffsets = []
   for (let tz = -1; tz <= 1; tz++)
     for (let tx = -1; tx <= 1; tx++)
       tileOffsets.push([tx * WORLD_SIZE, tz * WORLD_SIZE])
 
+  let count = 0, boxes = 0
   for (let z = 0; z < GRID; z++)
-    for (let y = 0; y < GRID; y++)
+    for (let y = 0; y < GRID_Y; y++)
       for (let x = 0; x < GRID; x++) {
-        if (!isSolid(x, y, z)) continue
+        if (!isSurf[x + y * strideY + z * strideZ] || done[x + y * strideY + z * strideZ]) continue
 
-        // DISPLAY: skip ceiling layer — arc-rotate camera looks down from above
-        if (y === GRID - 1) continue
+        // Extend in X
+        let w = 1
+        while (x + w < GRID && isSurf[(x+w) + y*strideY + z*strideZ] && !done[(x+w) + y*strideY + z*strideZ]) w++
 
-        // Only render surface blocks (at least one face-adjacent empty cell)
-        let surface = false
-        for (const [dx, dy, dz] of faceDir) {
-          if (!isSolid(x + dx, y + dy, z + dz)) { surface = true; break }
+        // Extend in Z (whole X-strip must qualify)
+        let d = 1
+        z_ext: while (z + d < GRID) {
+          for (let dx = 0; dx < w; dx++) {
+            const j = (x+dx) + y*strideY + (z+d)*strideZ
+            if (!isSurf[j] || done[j]) break z_ext
+          }
+          d++
         }
-        if (!surface) continue
 
-        const base = cellCenter(x, y, z)
+        // Extend in Y (whole XZ-rect must qualify)
+        let h = 1
+        y_ext: while (y + h < GRID_Y) {
+          for (let dz = 0; dz < d; dz++)
+            for (let dx = 0; dx < w; dx++) {
+              const j = (x+dx) + (y+h)*strideY + (z+dz)*strideZ
+              if (!isSurf[j] || done[j]) break y_ext
+            }
+          h++
+        }
+
+        // Mark merged cells done
+        for (let dy = 0; dy < h; dy++)
+          for (let dz = 0; dz < d; dz++)
+            for (let dx = 0; dx < w; dx++)
+              done[(x+dx) + (y+dy)*strideY + (z+dz)*strideZ] = 1
+
+        // Emit instances across 9 tiles
+        const cx = (x + w * 0.5) * CELL - HALF
+        const cy = (y + h * 0.5) * CELL - HALF_Y
+        const cz = (z + d * 0.5) * CELL - HALF
         for (const [ox, oz] of tileOffsets) {
           const inst = root.createInstance(`v${count++}`)
-          inst.position.set(base.x + ox, base.y, base.z + oz)
+          inst.position.set(cx + ox, cy, cz + oz)
+          inst.scaling.set(w * CELL, h * CELL, d * CELL)
           inst.isPickable = false
         }
+        boxes++
       }
 
-  console.log(`[Voxels] ${count} surface instances across 9 tiles (display)`)
+  console.log(`[Voxels] ${boxes} merged boxes → ${count} instances across 9 tiles (display)`)
 }
 
 // ─── Bullet world collision ───────────────────────────────────────────────────
@@ -318,7 +360,7 @@ engine.runRenderLoop(() => {
       b.mesh.position.x = ((p.x + HALF) % W + W) % W - HALF
       b.mesh.position.z = ((p.z + HALF) % W + W) % W - HALF
       // Y: dispose if bullet escapes ceiling/floor
-      if (Math.abs(p.y) > HALF) {
+      if (Math.abs(p.y) > HALF_Y) {
         b.light.dispose(); b.mesh.dispose(); bullets.splice(i, 1); continue
       }
 

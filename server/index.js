@@ -22,7 +22,7 @@ const isProd = process.env.NODE_ENV === 'production'
 if (isProd) {
   const distPath = join(__dirname, '../dist')
   app.use(express.static(distPath))
-  app.get('*', (req, res) => {
+  app.get('*', (_req, res) => {
     res.sendFile(join(distPath, 'index.html'))
   })
 }
@@ -32,31 +32,32 @@ const usedNumbers = new Set()
 
 // ─── World & physics constants ─────────────────────────────────────────────────
 const GRID         = 64
+const GRID_Y       = 32
 const CELL         = 2
-const HALF         = GRID * CELL / 2   // 32
+const HALF         = GRID   * CELL / 2   // 64  (XZ)
+const HALF_Y       = GRID_Y * CELL / 2   // 32  (Y)
 const VEHICLE_R    = 0.8
 const MOVE_SPEED   = 6
 const ROT_SPEED    = 2
-const PALETTE_SIZE = 8
 
 // ─── Cave generation (cellular automata + BFS) ────────────────────────────────
 function generateCave() {
-  const total = GRID * GRID * GRID
+  const total = GRID * GRID_Y * GRID
   const grid  = new Uint8Array(total)
 
-  function idx(x, y, z) { return x + y * GRID + z * GRID * GRID }
+  function idx(x, y, z) { return x + y * GRID + z * GRID * GRID_Y }
 
   // Y-only outer check — XZ sides are open for wrap-around
-  function isYOuter(y) { return y === 0 || y === GRID - 1 }
+  function isYOuter(y) { return y === 0 || y === GRID_Y - 1 }
 
   // Enforce floor and ceiling solid, clear XZ border ring for guaranteed passage
   function enforceYWallsAndClearXZBorder() {
     for (let z = 0; z < GRID; z++)
       for (let x = 0; x < GRID; x++) {
-        grid[idx(x, 0,        z)] = 1
-        grid[idx(x, GRID - 1, z)] = 1
+        grid[idx(x, 0,         z)] = 1
+        grid[idx(x, GRID_Y - 1, z)] = 1
       }
-    for (let y = 1; y < GRID - 1; y++) {
+    for (let y = 1; y < GRID_Y - 1; y++) {
       for (let z = 0; z < GRID; z++) {
         grid[idx(0,        y, z)] = 0
         grid[idx(GRID - 1, y, z)] = 0
@@ -70,7 +71,7 @@ function generateCave() {
 
   // Step 1: Seed — Y borders solid, interior ~45% random, XZ borders participate
   for (let z = 0; z < GRID; z++)
-    for (let y = 0; y < GRID; y++)
+    for (let y = 0; y < GRID_Y; y++)
       for (let x = 0; x < GRID; x++)
         grid[idx(x, y, z)] = isYOuter(y) ? 1 : (Math.random() < 0.45 ? 1 : 0)
 
@@ -78,7 +79,7 @@ function generateCave() {
   const next = new Uint8Array(total)
   for (let pass = 0; pass < 4; pass++) {
     for (let z = 0; z < GRID; z++)
-      for (let y = 0; y < GRID; y++)
+      for (let y = 0; y < GRID_Y; y++)
         for (let x = 0; x < GRID; x++) {
           if (isYOuter(y)) { next[idx(x, y, z)] = 1; continue }
           let count = 0
@@ -88,7 +89,7 @@ function generateCave() {
                 const nx = ((x + dx) % GRID + GRID) % GRID  // wrap X
                 const nz = ((z + dz) % GRID + GRID) % GRID  // wrap Z
                 const ny = y + dy
-                if (ny < 0 || ny >= GRID) { count++; continue }  // Y clamps = solid
+                if (ny < 0 || ny >= GRID_Y) { count++; continue }  // Y clamps = solid
                 count += grid[idx(nx, ny, nz)]
               }
           next[idx(x, y, z)] = count >= 14 ? 1 : 0
@@ -97,16 +98,17 @@ function generateCave() {
   }
 
   // Step 3: Carve guaranteed open area at center
-  const mid = Math.floor(GRID / 2)
+  const mid  = Math.floor(GRID   / 2)
+  const midY = Math.floor(GRID_Y / 2)
   for (let dz = -3; dz <= 3; dz++)
     for (let dy = -3; dy <= 3; dy++)
       for (let dx = -3; dx <= 3; dx++)
-        grid[idx(mid + dx, mid + dy, mid + dz)] = 0
+        grid[idx(mid + dx, midY + dy, mid + dz)] = 0
 
   // Step 4: BFS flood-fill from center — XZ wraps, Y clamps
   const visited = new Uint8Array(total)
   const queue   = []
-  const startIdx = idx(mid, mid, mid)
+  const startIdx = idx(mid, midY, mid)
   visited[startIdx] = 1
   queue.push(startIdx)
 
@@ -114,14 +116,14 @@ function generateCave() {
   let head = 0
   while (head < queue.length) {
     const i = queue[head++]
-    const iz = Math.floor(i / (GRID * GRID))
-    const iy = Math.floor((i % (GRID * GRID)) / GRID)
+    const iz = Math.floor(i / (GRID * GRID_Y))
+    const iy = Math.floor((i % (GRID * GRID_Y)) / GRID)
     const ix = i % GRID
     for (const [dx, dy, dz] of faces) {
       const nx = ((ix + dx) % GRID + GRID) % GRID  // wrap X
       const nz = ((iz + dz) % GRID + GRID) % GRID  // wrap Z
       const ny = iy + dy
-      if (ny < 0 || ny >= GRID) continue            // Y wall
+      if (ny < 0 || ny >= GRID_Y) continue          // Y wall
       const ni = idx(nx, ny, nz)
       if (!visited[ni] && !grid[ni]) {
         visited[ni] = 1
@@ -137,6 +139,29 @@ function generateCave() {
   // Step 6: Enforce Y walls + clear XZ border ring (after fill so border stays open)
   enforceYWallsAndClearXZBorder()
 
+  // Step 7: Strip interior solid cells — solid blocks with all 6 face-neighbors solid
+  // are unreachable and invisible; clearing them halves collision checks and shrinks data
+  const toStrip = new Uint8Array(total)
+  for (let z = 0; z < GRID; z++)
+    for (let y = 0; y < GRID_Y; y++)
+      for (let x = 0; x < GRID; x++) {
+        if (!grid[idx(x, y, z)]) continue
+        let interior = true
+        for (const [dx, dy, dz] of faces) {
+          const nx = ((x + dx) % GRID + GRID) % GRID
+          const nz = ((z + dz) % GRID + GRID) % GRID
+          const ny = y + dy
+          if (ny < 0 || ny >= GRID_Y) continue   // Y walls count as solid
+          if (!grid[idx(nx, ny, nz)]) { interior = false; break }
+        }
+        if (interior) toStrip[idx(x, y, z)] = 1
+      }
+  let stripped = 0
+  for (let i = 0; i < total; i++)
+    if (toStrip[i]) { grid[i] = 0; stripped++ }
+
+  console.log(`[World] Stripped ${stripped} interior cells (${((stripped / total) * 100).toFixed(1)}% of total)`)
+
   return grid
 }
 
@@ -144,24 +169,24 @@ const worldGrid = generateCave()
 
 // ─── Voxel helpers ────────────────────────────────────────────────────────────
 function isSolid(cx, cy, cz) {
-  if (cy < 0 || cy >= GRID) return true                     // Y out-of-bounds = solid ceiling/floor
+  if (cy < 0 || cy >= GRID_Y) return true                   // Y out-of-bounds = solid ceiling/floor
   const wx = ((cx % GRID) + GRID) % GRID                   // wrap X
   const wz = ((cz % GRID) + GRID) % GRID                   // wrap Z
-  return worldGrid[wx + cy * GRID + wz * GRID * GRID] === 1
+  return worldGrid[wx + cy * GRID + wz * GRID * GRID_Y] === 1
 }
 
 function worldToCell(wx, wy, wz) {
   return {
-    cx: Math.floor((wx + HALF) / CELL),
-    cy: Math.floor((wy + HALF) / CELL),
-    cz: Math.floor((wz + HALF) / CELL),
+    cx: Math.floor((wx  + HALF)   / CELL),
+    cy: Math.floor((wy  + HALF_Y) / CELL),
+    cz: Math.floor((wz  + HALF)   / CELL),
   }
 }
 
 function cellToWorld(cx, cy, cz) {
   return {
     x: (cx + 0.5) * CELL - HALF,
-    y: (cy + 0.5) * CELL - HALF,
+    y: (cy + 0.5) * CELL - HALF_Y,
     z: (cz + 0.5) * CELL - HALF,
   }
 }
@@ -171,7 +196,7 @@ function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v }
 
 function resolveSolidCell(state, cx, cy, cz) {
   const bx = cx * CELL - HALF
-  const by = cy * CELL - HALF
+  const by = cy * CELL - HALF_Y
   const bz = cz * CELL - HALF
   const px = clamp(state.x, bx, bx + CELL)
   const py = clamp(state.y, by, by + CELL)
@@ -219,7 +244,7 @@ function resolveVoxels(state) {
 const spawnCandidates = []
 const spawnFaces = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]
 for (let z = 0; z < GRID; z++)
-  for (let y = 1; y < GRID - 1; y++)   // Y: exclude floor(0) and ceiling(GRID-1)
+  for (let y = 1; y < GRID_Y - 1; y++)   // Y: exclude floor(0) and ceiling(GRID_Y-1)
     for (let x = 0; x < GRID; x++) {
       if (isSolid(x, y, z)) continue
       let ok = true
@@ -277,7 +302,7 @@ setInterval(() => {
     const W = GRID * CELL
     state.x = ((state.x + HALF) % W + W) % W - HALF
     state.z = ((state.z + HALF) % W + W) % W - HALF
-    state.y = Math.max(-HALF + VEHICLE_R, Math.min(HALF - VEHICLE_R, state.y))
+    state.y = Math.max(-HALF_Y + VEHICLE_R, Math.min(HALF_Y - VEHICLE_R, state.y))
 
     resolveVoxels(state)
 

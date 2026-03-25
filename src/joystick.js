@@ -160,10 +160,12 @@ function emitInput() {
 }
 
 // ─── Mini map ─────────────────────────────────────────────────────────────────
-const GRID = 64
-const CELL = 2
-const HALF = GRID * CELL / 2   // 64
-const MM   = 192               // canvas pixels
+const GRID   = 64
+const GRID_Y = 32
+const CELL   = 2
+const HALF   = GRID   * CELL / 2   // 64  (XZ)
+const HALF_Y = GRID_Y * CELL / 2   // 32  (Y)
+const MM     = 192               // canvas pixels
 
 const PALETTE_CSS = [
   '#7b8fff', '#ff6060', '#5eff82', '#cc60ff',
@@ -198,10 +200,10 @@ socket.on('joystick-list', (ids) => {
 
 function mmIsSolid(cx, cy, cz) {
   if (!worldGrid) return true
-  if (cy < 0 || cy >= GRID) return true
+  if (cy < 0 || cy >= GRID_Y) return true
   const wx = ((cx % GRID) + GRID) % GRID
   const wz = ((cz % GRID) + GRID) % GRID
-  return worldGrid[wx + cy * GRID + wz * GRID * GRID] === 1
+  return worldGrid[wx + cy * GRID + wz * GRID * GRID_Y] === 1
 }
 
 const mmCanvas = document.getElementById('minimap')
@@ -219,7 +221,7 @@ function drawMinimap() {
   if (worldGrid) {
     const own = myJoystickId ? vehiclePos.get(myJoystickId) : null
     const wy  = own ? own.y : 0
-    const cy  = Math.max(1, Math.min(GRID - 2, Math.floor((wy + HALF) / CELL)))
+    const cy  = Math.max(1, Math.min(GRID_Y - 2, Math.floor((wy + HALF_Y) / CELL)))
 
     for (let z = 0; z < GRID; z++) {
       for (let x = 0; x < GRID; x++) {
