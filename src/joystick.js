@@ -158,3 +158,118 @@ function emitInput() {
     lookY: lookInput.y,
   })
 }
+
+// ─── Mini map ─────────────────────────────────────────────────────────────────
+const GRID = 32
+const CELL = 2
+const HALF = GRID * CELL / 2   // 32
+const MM   = 192               // canvas pixels
+
+const PALETTE_CSS = [
+  '#7b8fff', '#ff6060', '#5eff82', '#cc60ff',
+  '#ffdc44', '#44f0ff', '#ff60cc', '#ff9644',
+]
+function paletteColor(id) { return PALETTE_CSS[(id - 1) % PALETTE_CSS.length] }
+
+let worldGrid      = null
+let myJoystickId   = null
+const vehiclePos   = new Map()   // id → { x, y, z, yaw }
+
+// Capture own ID when assigned
+const _origAssigned = socket.listeners('joystick-assigned')[0]
+socket.off('joystick-assigned')
+socket.on('joystick-assigned', (data) => {
+  myJoystickId = data.id
+  if (_origAssigned) _origAssigned(data)
+})
+
+socket.on('world', (data) => {
+  worldGrid = new Uint8Array(data)
+})
+
+socket.on('vehicle-state', ({ joystickId, x, y, z, yaw }) => {
+  vehiclePos.set(joystickId, { x, y, z, yaw })
+})
+
+socket.on('joystick-list', (ids) => {
+  for (const id of [...vehiclePos.keys()])
+    if (!ids.includes(id)) vehiclePos.delete(id)
+})
+
+function mmIsSolid(cx, cy, cz) {
+  if (!worldGrid) return true
+  if (cy < 0 || cy >= GRID) return true
+  const wx = ((cx % GRID) + GRID) % GRID
+  const wz = ((cz % GRID) + GRID) % GRID
+  return worldGrid[wx + cy * GRID + wz * GRID * GRID] === 1
+}
+
+const mmCanvas = document.getElementById('minimap')
+const mmCtx    = mmCanvas ? mmCanvas.getContext('2d') : null
+
+function drawMinimap() {
+  if (!mmCtx) { requestAnimationFrame(drawMinimap); return }
+
+  const cellPx = MM / GRID
+
+  mmCtx.clearRect(0, 0, MM, MM)
+  mmCtx.fillStyle = '#090910'
+  mmCtx.fillRect(0, 0, MM, MM)
+
+  if (worldGrid) {
+    const own = myJoystickId ? vehiclePos.get(myJoystickId) : null
+    const wy  = own ? own.y : 0
+    const cy  = Math.max(1, Math.min(GRID - 2, Math.floor((wy + HALF) / CELL)))
+
+    for (let z = 0; z < GRID; z++) {
+      for (let x = 0; x < GRID; x++) {
+        const solid = mmIsSolid(x, cy, z)
+        const px    = x * cellPx
+        const pz    = z * cellPx
+        if (solid) {
+          mmCtx.fillStyle = '#30293f'
+          mmCtx.fillRect(px, pz, cellPx + 0.5, cellPx + 0.5)
+        } else {
+          const hasFloor = mmIsSolid(x, cy - 1, z)
+          mmCtx.fillStyle = hasFloor ? '#141220' : '#0d0b18'
+          mmCtx.fillRect(px, pz, cellPx + 0.5, cellPx + 0.5)
+        }
+      }
+    }
+  }
+
+  // Draw vehicles
+  for (const [id, pos] of vehiclePos) {
+    const mx    = ((pos.x + HALF) / (GRID * CELL)) * MM
+    const mz    = ((pos.z + HALF) / (GRID * CELL)) * MM
+    const color = paletteColor(id)
+    const isOwn = id === myJoystickId
+    const size  = isOwn ? 5 : 3.5
+
+    mmCtx.save()
+    mmCtx.translate(mx, mz)
+    mmCtx.rotate(pos.yaw)
+
+    mmCtx.beginPath()
+    mmCtx.moveTo(0, -size * 1.8)
+    mmCtx.lineTo(-size, size)
+    mmCtx.lineTo(size, size)
+    mmCtx.closePath()
+
+    if (isOwn) {
+      mmCtx.shadowColor = color
+      mmCtx.shadowBlur  = 8
+    }
+    mmCtx.fillStyle = color
+    mmCtx.fill()
+    mmCtx.restore()
+  }
+
+  // Border
+  mmCtx.strokeStyle = '#2a2a40'
+  mmCtx.lineWidth   = 1
+  mmCtx.strokeRect(0.5, 0.5, MM - 1, MM - 1)
+
+  requestAnimationFrame(drawMinimap)
+}
+drawMinimap()

@@ -72,6 +72,7 @@
 
       .controls-row {
         flex: 1;
+        min-height: 0;
         display: flex;
         align-items: stretch;
       }
@@ -218,6 +219,31 @@
         line-height: 1.6;
       }
 
+      /* ── mini map ── */
+      .minimap-section {
+        padding: 8px 12px 10px;
+        border-top: 1px solid #2a2a38;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        flex-shrink: 0;
+      }
+      .minimap-title {
+        font-size: 0.68rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #5b6af0;
+        align-self: flex-start;
+      }
+      #minimap {
+        border: 1px solid #2a2a38;
+        border-radius: 3px;
+        display: block;
+        image-rendering: pixelated;
+      }
+
       /* nipplejs overrides */
       .nipple .front { background: #5b6af0 !important; }
       .nipple .back {
@@ -303,6 +329,10 @@
             <div class="coords" id="coords-right">x: 0.00 &nbsp; y: 0.00</div>
           </div>
 
+        </div>
+        <div class="minimap-section">
+          <span class="minimap-title">Map</span>
+          <canvas id="minimap" width="192" height="192"></canvas>
         </div>
       </div>
 

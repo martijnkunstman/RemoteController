@@ -23,7 +23,7 @@ const autoRotateEl    = document.getElementById('auto-rotate')
 // ─── Babylon engine & scene ───────────────────────────────────────────────────
 const engine = new Engine(canvas, true, { antialias: true })
 const scene  = new Scene(engine)
-scene.clearColor = new Color4(0.07, 0.06, 0.05, 1)
+scene.clearColor = new Color4(0.20, 0.17, 0.13, 1)
 
 // ─── Camera ───────────────────────────────────────────────────────────────────
 const camera = new ArcRotateCamera('cam', -Math.PI / 4, Math.PI / 3.5, 80, Vector3.Zero(), scene)
@@ -42,30 +42,14 @@ autoRotateEl.addEventListener('change', () => {
 
 // ─── Cave lighting ────────────────────────────────────────────────────────────
 const hemi = new HemisphericLight('hemi', new Vector3(0, 1, 0), scene)
-hemi.intensity   = 0.30
-hemi.diffuse     = new Color3(0.55, 0.48, 0.38)
-hemi.groundColor = new Color3(0.12, 0.09, 0.06)
-
-// 4 warm torch-like point lights — repositioned after world is received
-const torchColors = [
-  new Color3(1.0, 0.55, 0.15),
-  new Color3(1.0, 0.45, 0.10),
-  new Color3(0.9, 0.60, 0.20),
-  new Color3(1.0, 0.50, 0.05),
-]
-const torchLights = torchColors.map((col, i) => {
-  const light = new PointLight(`torch${i}`, new Vector3(0, 0, 0), scene)
-  light.diffuse   = col
-  light.specular  = col
-  light.intensity = 3.0
-  light.range     = 32
-  return light
-})
+hemi.intensity   = 0.88
+hemi.diffuse     = new Color3(0.80, 0.72, 0.58)
+hemi.groundColor = new Color3(0.50, 0.42, 0.32)
 
 // ─── Cave fog ─────────────────────────────────────────────────────────────────
 scene.fogMode    = Scene.FOGMODE_EXP2
-scene.fogColor   = new Color3(0.07, 0.06, 0.05)
-scene.fogDensity = 0.018
+scene.fogColor   = new Color3(0.20, 0.17, 0.13)
+scene.fogDensity = 0.015
 
 // ─── Voxel world constants (must match server/index.js) ───────────────────────
 const GRID = 32
@@ -92,9 +76,9 @@ function cellCenter(cx, cy, cz) {
 
 // ─── Voxel scene build ────────────────────────────────────────────────────────
 const rockColors = [
-  new Color3(0.30, 0.27, 0.22),  // warm sandstone
-  new Color3(0.22, 0.22, 0.25),  // dark granite
-  new Color3(0.26, 0.28, 0.22),  // mossy stone
+  new Color3(0.50, 0.45, 0.36),  // warm sandstone
+  new Color3(0.38, 0.38, 0.44),  // dark granite
+  new Color3(0.44, 0.46, 0.38),  // mossy stone
 ]
 let voxelRoots = []
 
@@ -111,6 +95,7 @@ function buildVoxelWorld(grid) {
     mat.diffuseColor  = col
     mat.specularColor = new Color3(0.04, 0.04, 0.04)
     mat.specularPower = 6
+    mat.emissiveColor = new Color3(0.04, 0.035, 0.025)
     return mat
   })
 
@@ -160,25 +145,6 @@ function buildVoxelWorld(grid) {
       }
 
   console.log(`[Voxels] ${count} surface instances across 9 tiles (display)`)
-  repositionTorches()
-}
-
-function repositionTorches() {
-  if (!worldGrid) return
-  // Distribute torches across 4 quadrants of the cave (XZ plane)
-  const quads = [[], [], [], []]
-  for (let z = 0; z < GRID; z++)
-    for (let y = 1; y < GRID - 1; y++)
-      for (let x = 0; x < GRID; x++) {
-        if (isSolid(x, y, z)) continue
-        const q = (x < GRID / 2 ? 0 : 1) + (z < GRID / 2 ? 0 : 2)
-        quads[q].push([x, y, z])
-      }
-  torchLights.forEach((light, i) => {
-    const pool = quads[i].length > 0 ? quads[i] : quads.find(q => q.length > 0) || [[16, 16, 16]]
-    const [cx, cy, cz] = pool[Math.floor(Math.random() * pool.length)]
-    light.position = cellCenter(cx, cy, cz)
-  })
 }
 
 // ─── Bullet world collision ───────────────────────────────────────────────────
