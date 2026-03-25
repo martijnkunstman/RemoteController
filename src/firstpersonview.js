@@ -9,6 +9,8 @@ import {
   Color4,
   MeshBuilder,
   StandardMaterial,
+  ShaderMaterial,
+  Effect,
   TransformNode,
   PointLight,
 } from '@babylonjs/core'
@@ -21,11 +23,12 @@ const myId = parseInt(new URLSearchParams(location.search).get('id') ?? '0', 10)
 // ─── Babylon engine & scene ───────────────────────────────────────────────────
 const engine = new Engine(canvas, true, { antialias: true })
 const scene  = new Scene(engine)
-scene.clearColor = new Color4(0.20, 0.17, 0.13, 1)
+scene.clearColor = new Color4(0, 0, 0, 1)
 
 // ─── Camera ───────────────────────────────────────────────────────────────────
 const camera = new FreeCamera('fpv', new Vector3(0, 0, -1), scene)
 camera.minZ = 0.1
+camera.maxZ = 400
 camera.fov  = 1.4   // ~80°
 
 // ─── Cave lighting ────────────────────────────────────────────────────────────
@@ -43,13 +46,13 @@ playerLight.range     = 16
 
 // ─── Cave fog ─────────────────────────────────────────────────────────────────
 scene.fogMode    = Scene.FOGMODE_EXP2
-scene.fogColor   = new Color3(0.20, 0.17, 0.13)
-scene.fogDensity = 0.015
+scene.fogColor   = new Color3(0, 0, 0)
+scene.fogDensity = 0.030
 
 // ─── Voxel world constants (must match server/index.js) ───────────────────────
-const GRID = 32
+const GRID = 64
 const CELL = 2
-const HALF = GRID * CELL / 2   // 32
+const HALF = GRID * CELL / 2   // 64
 
 let worldGrid = null
 
@@ -69,37 +72,66 @@ function cellCenter(cx, cy, cz) {
   )
 }
 
+// ─── Wireframe shaders (unlit, UV edge detection, depth fog) ─────────────────
+Effect.ShadersStore['wireVertexShader'] = `
+  precision highp float;
+  attribute vec3 position;
+  attribute vec2 uv;
+  attribute vec4 world0;
+  attribute vec4 world1;
+  attribute vec4 world2;
+  attribute vec4 world3;
+  uniform mat4 viewProjection;
+  varying vec2 vUV;
+  void main(void) {
+    mat4 world = mat4(world0, world1, world2, world3);
+    gl_Position = viewProjection * world * vec4(position, 1.0);
+    vUV = uv;
+  }
+`
+Effect.ShadersStore['wireFragmentShader'] = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform vec3 wireColor;
+  uniform float edgeWidth;
+  uniform vec3 fogColor;
+  uniform float fogDensity;
+  void main(void) {
+    float minEdge = min(min(vUV.x, 1.0 - vUV.x), min(vUV.y, 1.0 - vUV.y));
+    if (minEdge > edgeWidth) discard;
+    float depth = gl_FragCoord.z / gl_FragCoord.w;
+    float f = fogDensity * depth;
+    float fogFactor = clamp(exp(-f * f), 0.0, 1.0);
+    gl_FragColor = vec4(mix(fogColor, wireColor, fogFactor), 1.0);
+  }
+`
+
 // ─── Voxel scene build ────────────────────────────────────────────────────────
-const rockColors = [
-  new Color3(0.50, 0.45, 0.36),
-  new Color3(0.38, 0.38, 0.44),
-  new Color3(0.44, 0.46, 0.38),
-]
 let voxelRoots = []
 
 function buildVoxelWorld(grid) {
   worldGrid = grid
 
-  voxelRoots.forEach(r => r.dispose())
+  voxelRoots.forEach(r => { r.material?.dispose(); r.dispose() })
   voxelRoots = []
 
-  const mats = rockColors.map((col, i) => {
-    const mat = new StandardMaterial(`rockMat${i}`, scene)
-    mat.diffuseColor  = col
-    mat.specularColor = new Color3(0.04, 0.04, 0.04)
-    mat.specularPower = 6
-    mat.emissiveColor = new Color3(0.04, 0.035, 0.025)
-    return mat
-  })
+  const wireMat = new ShaderMaterial('wireMat', scene,
+    { vertex: 'wire', fragment: 'wire' },
+    {
+      attributes: ['position', 'uv', 'world0', 'world1', 'world2', 'world3'],
+      uniforms:   ['viewProjection', 'wireColor', 'edgeWidth', 'fogColor', 'fogDensity'],
+    }
+  )
+  wireMat.setColor3('wireColor', new Color3(0.1, 0.85, 0.7))
+  wireMat.setFloat('edgeWidth',  0.055)
+  wireMat.setColor3('fogColor',  new Color3(0, 0, 0))
+  wireMat.setFloat('fogDensity', scene.fogDensity)
 
-  const roots = mats.map((mat, i) => {
-    const root = MeshBuilder.CreateBox(`rockRoot${i}`, { size: CELL - 0.05 }, scene)
-    root.material   = mat
-    root.isVisible  = false
-    root.isPickable = false
-    return root
-  })
-  voxelRoots = roots
+  const root = MeshBuilder.CreateBox('wireRoot', { size: CELL - 0.05 }, scene)
+  root.material   = wireMat
+  root.isVisible  = false
+  root.isPickable = false
+  voxelRoots = [root]
 
   const faceDir = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]
   let count = 0
@@ -123,10 +155,9 @@ function buildVoxelWorld(grid) {
         }
         if (!surface) continue
 
-        const matIdx = (x * 7 + y * 13 + z * 5) % 3
-        const base   = cellCenter(x, y, z)
+        const base = cellCenter(x, y, z)
         for (const [ox, oz] of tileOffsets) {
-          const inst = roots[matIdx].createInstance(`v${count++}`)
+          const inst = root.createInstance(`v${count++}`)
           inst.position.set(base.x + ox, base.y, base.z + oz)
           inst.isPickable = false
         }

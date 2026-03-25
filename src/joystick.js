@@ -160,9 +160,9 @@ function emitInput() {
 }
 
 // ─── Mini map ─────────────────────────────────────────────────────────────────
-const GRID = 32
+const GRID = 64
 const CELL = 2
-const HALF = GRID * CELL / 2   // 32
+const HALF = GRID * CELL / 2   // 64
 const MM   = 192               // canvas pixels
 
 const PALETTE_CSS = [
@@ -224,7 +224,7 @@ function drawMinimap() {
     for (let z = 0; z < GRID; z++) {
       for (let x = 0; x < GRID; x++) {
         const solid = mmIsSolid(x, cy, z)
-        const px    = x * cellPx
+        const px    = (GRID - 1 - x) * cellPx
         const pz    = z * cellPx
         if (solid) {
           mmCtx.fillStyle = '#30293f'
@@ -240,7 +240,7 @@ function drawMinimap() {
 
   // Draw vehicles
   for (const [id, pos] of vehiclePos) {
-    const mx    = ((pos.x + HALF) / (GRID * CELL)) * MM
+    const mx    = MM - ((pos.x + HALF) / (GRID * CELL)) * MM
     const mz    = ((pos.z + HALF) / (GRID * CELL)) * MM
     const color = paletteColor(id)
     const isOwn = id === myJoystickId
@@ -251,9 +251,9 @@ function drawMinimap() {
     mmCtx.rotate(pos.yaw)
 
     mmCtx.beginPath()
-    mmCtx.moveTo(0, -size * 1.8)
-    mmCtx.lineTo(-size, size)
-    mmCtx.lineTo(size, size)
+    mmCtx.moveTo(0, size * 1.8)
+    mmCtx.lineTo(-size, -size)
+    mmCtx.lineTo(size, -size)
     mmCtx.closePath()
 
     if (isOwn) {

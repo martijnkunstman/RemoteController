@@ -31,7 +31,7 @@ const joystickMap = new Map()   // socket.id -> joystickId (number)
 const usedNumbers = new Set()
 
 // ─── World & physics constants ─────────────────────────────────────────────────
-const GRID         = 32
+const GRID         = 64
 const CELL         = 2
 const HALF         = GRID * CELL / 2   // 32
 const VEHICLE_R    = 0.8
@@ -98,9 +98,9 @@ function generateCave() {
 
   // Step 3: Carve guaranteed open area at center
   const mid = Math.floor(GRID / 2)
-  for (let dz = -2; dz <= 2; dz++)
-    for (let dy = -2; dy <= 2; dy++)
-      for (let dx = -2; dx <= 2; dx++)
+  for (let dz = -3; dz <= 3; dz++)
+    for (let dy = -3; dy <= 3; dy++)
+      for (let dx = -3; dx <= 3; dx++)
         grid[idx(mid + dx, mid + dy, mid + dz)] = 0
 
   // Step 4: BFS flood-fill from center — XZ wraps, Y clamps
