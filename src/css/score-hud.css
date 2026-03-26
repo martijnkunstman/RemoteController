@@ -1,0 +1,22 @@
+/* ─── Score HUD (display + firstpersonview) ──────────────────────────────────*/
+#score-hud {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(5, 5, 12, 0.78);
+  padding: 6px 18px;
+  border-radius: 20px;
+  font-family: 'Courier New', monospace;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  pointer-events: none;
+}
+
+.score-blue { color: var(--blue); }
+.score-sep  { color: #444; }
+.score-red  { color: var(--red); }
