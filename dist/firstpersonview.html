@@ -4,29 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>First Person View — Remote Controller</title>
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-
-      body {
-        background: #0f0f13;
-        width: 100vw;
-        height: 100vh;
-        overflow: hidden;
-      }
-
-      #renderCanvas {
-        width: 100%;
-        height: 100%;
-        display: block;
-        outline: none;
-      }
-    </style>
-    <script type="module" crossorigin src="/assets/firstpersonview-BW0AXY5b.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-B5Qt9EMX.js">
-    <link rel="modulepreload" crossorigin href="/assets/index-BcxXcwBL.js">
-    <link rel="modulepreload" crossorigin href="/assets/nativeXRFrame-CWbpTJjq.js">
+    <script type="module" crossorigin src="/assets/firstpersonview-CEb4bcmY.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/base-lRFd-gIO.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-socket-BcxXcwBL.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-babylon-BTGOKxYZ.js">
+    <link rel="modulepreload" crossorigin href="/assets/shared-3d-COIipjNQ.js">
+    <link rel="stylesheet" crossorigin href="/assets/base-XJX8cPGZ.css">
+    <link rel="stylesheet" crossorigin href="/assets/firstpersonview-BvAZlfUu.css">
+    <link rel="stylesheet" crossorigin href="/assets/score-hud-D1dFhQSG.css">
   </head>
   <body>
     <canvas id="renderCanvas" touch-action="none"></canvas>
+    <div id="score-hud">
+      <span id="score-blue" class="score-blue">BLUE 0</span>
+      <span class="score-sep">|</span>
+      <span id="score-red" class="score-red">RED 0</span>
+    </div>
   </body>
 </html>

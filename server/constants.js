@@ -22,3 +22,13 @@ export const HIT_RADIUS          = 1.3
 export const HIT_INVINCIBILITY   = 0.5
 export const BULLET_LIFETIME     = 2.2
 export const BULLET_SPEED_SRV    = 18
+
+// ─── Bot AI tuning ────────────────────────────────────────────────────────────
+export const BOT_RETREAT_RANGE         = 8      // units — back up when enemy this close
+export const BOT_INVESTIGATE_DURATION  = 3.5    // seconds to pursue last-known position
+export const BOT_STUCK_THRESHOLD       = 0.6    // units moved before bot is "not stuck"
+export const BOT_STUCK_SAMPLE_INTERVAL = 0.8    // seconds between stuck position samples
+export const BOT_RECOVERY_DURATION     = 1.2    // seconds of forced reverse during recovery
+export const BOT_STRAFE_MIN_DURATION   = 0.4    // min seconds before strafe direction flip
+export const BOT_STRAFE_MAX_DURATION   = 0.8    // max seconds before strafe direction flip
+export const BOT_LOS_STEPS             = 40     // ray-march steps for line-of-sight check
