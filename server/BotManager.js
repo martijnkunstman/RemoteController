@@ -126,17 +126,17 @@ export class BotManager {
     if (ai.state === 'wander') {
       // Refresh wander direction on timer
       if (ai.wanderTimer <= 0) {
-        ai.wanderTimer   = 1.0 + Math.random() * 2.0
+        ai.wanderTimer   = 1.5 + Math.random() * 2.5
         ai.wanderTurnDir = Math.random() < 0.5 ? -1 : 1
-        ai.wanderTurnAmt = 0.2 + Math.random() * 0.5
+        ai.wanderTurnAmt = 0.05 + Math.random() * 0.15
       }
 
       if (wallAhead) {
         inp.lookX = bias !== 0 ? bias : ai.wanderTurnDir
-        inp.moveY = 0.2
+        inp.moveY = 0.3
       } else {
         inp.lookX = ai.wanderTurnAmt * ai.wanderTurnDir
-        inp.moveY = 0.7
+        inp.moveY = 1.0
       }
 
       // Transition: enemy visible with LOS
@@ -291,27 +291,46 @@ export class BotManager {
     return true
   }
 
-  // Probe a single direction at yaw + angleOffset.
+  // Probe a single direction at yaw + angleOffset. Tests two distances to prevent jumping thin walls.
   _probeWallAt(state, angleOffset, dist) {
     const a = state.yaw + angleOffset
-    return this.world.isSolid(
-      Math.floor((state.x + Math.sin(a) * dist + HALF)   / CELL),
+    const dx = Math.sin(a)
+    const dz = Math.cos(a)
+    if (this.world.isSolid(
+      Math.floor((state.x + dx * dist * 0.5 + HALF) / CELL),
       Math.floor((state.y                       + HALF_Y) / CELL),
-      Math.floor((state.z + Math.cos(a) * dist + HALF)   / CELL),
+      Math.floor((state.z + dz * dist * 0.5 + HALF) / CELL)
+    )) return true
+    return this.world.isSolid(
+      Math.floor((state.x + dx * dist + HALF)   / CELL),
+      Math.floor((state.y                       + HALF_Y) / CELL),
+      Math.floor((state.z + dz * dist + HALF)   / CELL),
     )
   }
 
   // Multi-directional wall probe. Returns { wallAhead, bias }.
   // bias: -1 = turn left, +1 = turn right, 0 = toss-up.
   _getSteer(state) {
-    const D = 3.0, A = Math.PI / 4
+    const D = 3.8, A1 = Math.PI / 6, A2 = Math.PI / 3
     const ahead = this._probeWallAt(state,  0, D)
-    if (!ahead) return { wallAhead: false, bias: 0 }
-    const L = this._probeWallAt(state, -A, D)
-    const R = this._probeWallAt(state,  A, D)
-    if (!L &&  R) return { wallAhead: true, bias: -1 }
-    if ( L && !R) return { wallAhead: true, bias:  1 }
-    return { wallAhead: true, bias: 0 }
+    const L1    = this._probeWallAt(state, -A1, D)
+    const R1    = this._probeWallAt(state,  A1, D)
+
+    const wallVisible = ahead || L1 || R1
+    if (!wallVisible) return { wallAhead: false, bias: 0 }
+
+    const L2 = this._probeWallAt(state, -A2, D)
+    const R2 = this._probeWallAt(state,  A2, D)
+
+    const leftBlocked = (L1 ? 1 : 0) + (L2 ? 1 : 0)
+    const rightBlocked = (R1 ? 1 : 0) + (R2 ? 1 : 0)
+
+    let bias = 0
+    if (leftBlocked < rightBlocked) bias = -1
+    else if (rightBlocked < leftBlocked) bias = 1
+    else bias = Math.random() < 0.5 ? -1 : 1
+
+    return { wallAhead: true, bias }
   }
 
   _wrapAngle(a) {

@@ -80,7 +80,8 @@ export class VehicleManager {
     }
 
     const bullets = []
-    return { pivot, pyramid, mat, glow, state, bullets, label, team }
+    const targetState = { x: 0, y: 0, z: 0, yaw: 0 }
+    return { pivot, pyramid, mat, glow, state, targetState, bullets, label, team }
   }
 
   spawnBullet(vehicle) {

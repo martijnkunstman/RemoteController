@@ -1,48 +1,10 @@
 import {
   MeshBuilder,
-  ShaderMaterial,
-  Effect,
+  StandardMaterial,
+  DynamicTexture,
   Color3,
 } from '@babylonjs/core'
 import { GRID, GRID_Y, CELL, HALF, HALF_Y, GRID_MASK } from './worldConstants.js'
-
-// ─── Wireframe shaders ────────────────────────────────────────────────────────
-// Registered at module level — BabylonJS requires this before ShaderMaterial is created.
-Effect.ShadersStore['wireVertexShader'] = `
-  precision highp float;
-  attribute vec3 position;
-  attribute vec2 uv;
-  attribute vec4 world0;
-  attribute vec4 world1;
-  attribute vec4 world2;
-  attribute vec4 world3;
-  uniform mat4 viewProjection;
-  varying vec2 vUV;
-  void main(void) {
-    mat4 world = mat4(world0, world1, world2, world3);
-    gl_Position = viewProjection * world * vec4(position, 1.0);
-    vUV = uv;
-  }
-`
-Effect.ShadersStore['wireFragmentShader'] = `
-  precision highp float;
-  varying vec2 vUV;
-  uniform vec3 wireColor;
-  uniform float edgeWidth;
-  uniform vec3 fogColor;
-  uniform float fogDensity;
-  void main(void) {
-    float minEdge = min(min(vUV.x, 1.0 - vUV.x), min(vUV.y, 1.0 - vUV.y));
-    float depth = gl_FragCoord.z / gl_FragCoord.w;
-    float f = fogDensity * depth;
-    float fogFactor = clamp(exp(-f * f), 0.0, 1.0);
-    if (minEdge > edgeWidth) {
-      gl_FragColor = vec4(fogColor, 1.0);
-    } else {
-      gl_FragColor = vec4(mix(fogColor, wireColor, fogFactor), 1.0);
-    }
-  }
-`
 
 // ─── WorldRenderer ────────────────────────────────────────────────────────────
 // Builds the voxel mesh from the server grid using greedy 3D merging,
@@ -62,20 +24,33 @@ export class WorldRenderer {
     this.voxelRoots.forEach(r => { r.material?.dispose(); r.dispose() })
     this.voxelRoots = []
 
-    const wireMat = new ShaderMaterial('wireMat', this.scene,
-      { vertex: 'wire', fragment: 'wire' },
-      {
-        attributes: ['position', 'uv', 'world0', 'world1', 'world2', 'world3'],
-        uniforms:   ['viewProjection', 'wireColor', 'edgeWidth', 'fogColor', 'fogDensity'],
-      }
-    )
-    wireMat.setColor3('wireColor', new Color3(0.1, 0.85, 0.7))
-    wireMat.setFloat('edgeWidth',  0.055)
-    wireMat.setColor3('fogColor',  new Color3(0, 0, 0))
-    wireMat.setFloat('fogDensity', this.scene.fogDensity)
+    // Solid Neon Grid Material
+    const voxelMat = new StandardMaterial('voxelMat', this.scene)
+    const texSize = 512
+    const dt = new DynamicTexture('gridTex', texSize, this.scene, true)
+    const ctx = dt.getContext()
+    
+    // Background fill
+    ctx.fillStyle = '#050814'
+    ctx.fillRect(0, 0, texSize, texSize)
+    
+    // Glowing borders
+    const border = 16
+    ctx.lineWidth = border
+    ctx.strokeStyle = '#00ffff'
+    ctx.shadowColor = '#00ffff'
+    ctx.shadowBlur = 24
+    ctx.strokeRect(border/2, border/2, texSize - border, texSize - border)
+    ctx.strokeRect(border/2, border/2, texSize - border, texSize - border)
+    
+    dt.update()
 
-    const root = MeshBuilder.CreateBox('wireRoot', { size: 1 }, this.scene)
-    root.material   = wireMat
+    voxelMat.emissiveTexture = dt
+    voxelMat.diffuseTexture  = dt
+    voxelMat.specularColor   = new Color3(0.0, 0.4, 0.4)
+
+    const root = MeshBuilder.CreateBox('voxelRoot', { size: 1 }, this.scene)
+    root.material   = voxelMat
     root.isVisible  = false
     root.isPickable = false
     this.voxelRoots = [root]

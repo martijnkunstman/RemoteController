@@ -8,6 +8,7 @@ import {
   Color3,
   Color4,
   Matrix,
+  Scalar,
 } from '@babylonjs/core'
 import { GRID, CELL, HALF, HALF_Y } from './worldConstants.js'
 import { WorldRenderer } from './WorldRenderer.js'
@@ -79,7 +80,17 @@ class DisplayApp {
     const viewport        = this.camera.viewport.toGlobal(this.engine.getRenderWidth(), this.engine.getRenderHeight())
 
     for (const [, v] of this.vehicleManager.vehicles) {
-      const { state, pivot, glow, bullets, label } = v
+      const { state, targetState, pivot, glow, bullets, label } = v
+
+      const W = GRID * CELL
+      if (Math.abs(targetState.x - state.x) > W / 2) state.x = targetState.x
+      if (Math.abs(targetState.z - state.z) > W / 2) state.z = targetState.z
+
+      const blend = Math.min(dt * 15, 1.0)
+      state.x = Scalar.Lerp(state.x, targetState.x, blend)
+      state.y = Scalar.Lerp(state.y, targetState.y, blend)
+      state.z = Scalar.Lerp(state.z, targetState.z, blend)
+      state.yaw = Scalar.LerpAngle(state.yaw, targetState.yaw, blend)
 
       pivot.position.set(state.x, state.y, state.z)
       pivot.rotation.y = state.yaw
@@ -174,7 +185,7 @@ class DisplayApp {
   _onVehicleStates(states) {
     for (const data of states) {
       const v = this.vehicleManager.getVehicle(data.joystickId)
-      if (v) { v.state.x = data.x; v.state.y = data.y; v.state.z = data.z; v.state.yaw = data.yaw }
+      if (v) { v.targetState.x = data.x; v.targetState.y = data.y; v.targetState.z = data.z; v.targetState.yaw = data.yaw }
     }
   }
 
