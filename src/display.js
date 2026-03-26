@@ -225,17 +225,11 @@ function bulletHitsWorld(p) {
   return isSolid(cx, cy, cz)
 }
 
-// ─── Vehicle palette ──────────────────────────────────────────────────────────
-const PALETTE = [
-  { d: [0.36, 0.42, 0.94], e: [0.08, 0.10, 0.28], g: [0.4, 0.5, 1.0],  css: '#7b8fff' },
-  { d: [0.94, 0.32, 0.32], e: [0.28, 0.06, 0.06], g: [1.0, 0.35, 0.35], css: '#ff6060' },
-  { d: [0.28, 0.90, 0.46], e: [0.05, 0.26, 0.11], g: [0.35, 1.0, 0.5],  css: '#5eff82' },
-  { d: [0.80, 0.32, 0.94], e: [0.22, 0.06, 0.28], g: [0.85, 0.38, 1.0], css: '#cc60ff' },
-  { d: [0.94, 0.80, 0.22], e: [0.28, 0.22, 0.04], g: [1.0, 0.88, 0.3],  css: '#ffdc44' },
-  { d: [0.22, 0.88, 0.90], e: [0.04, 0.24, 0.26], g: [0.3, 1.0, 1.0],   css: '#44f0ff' },
-  { d: [0.94, 0.32, 0.74], e: [0.28, 0.06, 0.20], g: [1.0, 0.38, 0.82], css: '#ff60cc' },
-  { d: [0.94, 0.56, 0.20], e: [0.28, 0.14, 0.04], g: [1.0, 0.62, 0.28], css: '#ff9644' },
-]
+// ─── Team colors ──────────────────────────────────────────────────────────────
+const TEAM_COLOR = {
+  blue: { d: [0.20, 0.40, 0.95], e: [0.05, 0.10, 0.38], g: [0.30, 0.50, 1.00], css: '#4a7aff' },
+  red:  { d: [0.95, 0.20, 0.20], e: [0.38, 0.05, 0.05], g: [1.00, 0.30, 0.30], css: '#ff4040' },
+}
 
 // ─── Vehicle management ────────────────────────────────────────────────────────
 const BULLET_SPEED = 18
@@ -248,12 +242,8 @@ bulletMat.specularColor = new Color3(1, 0.4,  0.4)
 
 const vehicles = new Map()
 
-function palette(joystickId) {
-  return PALETTE[(joystickId - 1) % PALETTE.length]
-}
-
-function createVehicle(joystickId) {
-  const col   = palette(joystickId)
+function createVehicle(joystickId, team) {
+  const col   = TEAM_COLOR[team] ?? TEAM_COLOR.blue
   const state = { x: 0, y: 0, z: 0, yaw: 0 }
 
   const pivot = new TransformNode(`pivot-${joystickId}`, scene)
@@ -287,7 +277,7 @@ function createVehicle(joystickId) {
 
   const bullets = []
 
-  return { pivot, pyramid, mat, glow, state, bullets, label }
+  return { pivot, pyramid, mat, glow, state, bullets, label, team }
 }
 
 function spawnBullet(vehicle) {
@@ -415,17 +405,31 @@ socket.on('world', (data) => {
   buildVoxelWorld(new Uint8Array(data))
 })
 
-socket.on('joystick-list', (ids) => {
-  for (const id of ids) {
-    if (!vehicles.has(id)) vehicles.set(id, createVehicle(id))
+socket.on('joystick-list', (members) => {
+  for (const { id, team } of members) {
+    if (!vehicles.has(id)) vehicles.set(id, createVehicle(id, team))
   }
   for (const id of [...vehicles.keys()]) {
-    if (!ids.includes(id)) removeVehicle(id)
+    if (!members.find(m => m.id === id)) removeVehicle(id)
   }
-  const n = ids.length
-  joystickCountEl.textContent = n === 0
-    ? 'No joysticks'
-    : `${n} joystick${n !== 1 ? 's' : ''} connected`
+  const humans = members.filter(m => !m.isBot).length
+  joystickCountEl.textContent = humans === 0
+    ? 'No players'
+    : `${humans} player${humans !== 1 ? 's' : ''}`
+})
+
+socket.on('score-update', ({ blue, red }) => {
+  document.getElementById('score-blue').textContent = `BLUE ${blue}`
+  document.getElementById('score-red').textContent  = `RED ${red}`
+})
+
+socket.on('hit', ({ targetId }) => {
+  const v = vehicles.get(targetId)
+  if (!v) return
+  v.mat.emissiveColor = new Color3(1, 1, 1)
+  setTimeout(() => {
+    v.mat.emissiveColor = new Color3(...TEAM_COLOR[v.team].e)
+  }, 120)
 })
 
 socket.on('vehicle-states', (states) => {

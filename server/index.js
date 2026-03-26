@@ -275,16 +275,158 @@ function nextNumber() {
 }
 
 function joystickList() {
-  return [...joystickMap.values()].sort((a, b) => a - b)
+  const all = [...vehicleStates.keys()].sort((a, b) => a - b)
+  return all.map(id => ({ id, team: vehicleTeams.get(id), isBot: bots.has(id) }))
 }
 
 // ─── Physics loop ─────────────────────────────────────────────────────────────
 const ZERO_INPUT = { moveX: 0, moveY: 0, lookX: 0, lookY: 0 }
+
+// ─── Team game constants & state ──────────────────────────────────────────────
+const TEAMS               = { BLUE: 'blue', RED: 'red' }
+const BOT_BLUE_IDS        = [1, 2, 3]
+const BOT_RED_IDS         = [4, 5, 6]
+const BOT_DETECTION_RANGE = 50
+const BOT_ENGAGE_RANGE    = 22
+const BOT_FIRE_ANGLE      = Math.PI / 10
+const BOT_FIRE_INTERVAL   = 0.28
+const HIT_RADIUS          = 1.3
+const HIT_INVINCIBILITY   = 0.5
+const BULLET_LIFETIME     = 2.2
+const BULLET_SPEED_SRV    = 18
+
+const vehicleTeams  = new Map()
+const score         = { blue: 0, red: 0 }
+const bots          = new Set()
+const botAI         = new Map()
+const serverBullets = []
+const hitCooldowns  = new Map()
+
+function createBot(id, team) {
+  bots.add(id)
+  usedNumbers.add(id)
+  vehicleTeams.set(id, team)
+  const spawn = randomSpawnPos()
+  vehicleStates.set(id, { x: spawn.x, y: spawn.y, z: spawn.z, yaw: spawn.yaw })
+  vehicleInputs.set(id, { ...ZERO_INPUT })
+  botAI.set(id, {
+    state: 'wander',
+    targetId: null,
+    wanderTimer: 0,
+    wanderTurnDir: 1,
+    wanderTurnAmt: 0.4,
+    fireTimer: 0,
+  })
+  hitCooldowns.set(id, 0)
+}
+
+BOT_BLUE_IDS.forEach(id => createBot(id, TEAMS.BLUE))
+BOT_RED_IDS.forEach(id => createBot(id, TEAMS.RED))
+
+// ─── Server bullet helpers ────────────────────────────────────────────────────
+function spawnServerBullet(ownerId, state) {
+  serverBullets.push({
+    ownerId,
+    x:  state.x + Math.sin(state.yaw) * 1.1,
+    y:  state.y,
+    z:  state.z + Math.cos(state.yaw) * 1.1,
+    vx: Math.sin(state.yaw),
+    vz: Math.cos(state.yaw),
+    age: 0,
+  })
+}
+
+function bulletHitsWorldSrv(b) {
+  const cx = Math.floor((b.x + HALF)   / CELL)
+  const cy = Math.floor((b.y + HALF_Y) / CELL)
+  const cz = Math.floor((b.z + HALF)   / CELL)
+  return isSolid(cx, cy, cz)
+}
+
+// ─── Bot AI ───────────────────────────────────────────────────────────────────
+function probeWall(state, dist) {
+  const px = state.x + Math.sin(state.yaw) * dist
+  const pz = state.z + Math.cos(state.yaw) * dist
+  return isSolid(
+    Math.floor((px + HALF)        / CELL),
+    Math.floor((state.y + HALF_Y) / CELL),
+    Math.floor((pz + HALF)        / CELL),
+  )
+}
+
+function wrapAngle(a) {
+  while (a >  Math.PI) a -= 2 * Math.PI
+  while (a < -Math.PI) a += 2 * Math.PI
+  return a
+}
+
+function updateBotAI(id, dt) {
+  const state = vehicleStates.get(id)
+  const ai    = botAI.get(id)
+  const team  = vehicleTeams.get(id)
+  const W     = GRID * CELL
+
+  ai.fireTimer = Math.max(0, ai.fireTimer - dt)
+  if (ai.wanderTimer > 0) ai.wanderTimer -= dt
+
+  // Find nearest enemy (wrap-aware distance)
+  let enemy = null, enemyDist = Infinity
+  for (const [eid, es] of vehicleStates) {
+    if (vehicleTeams.get(eid) === team) continue
+    let dx = es.x - state.x, dz = es.z - state.z
+    dx -= Math.round(dx / W) * W
+    dz -= Math.round(dz / W) * W
+    const d = Math.sqrt(dx * dx + dz * dz)
+    if (d < enemyDist) { enemyDist = d; enemy = { id: eid, state: es, dx, dz } }
+  }
+
+  const inp = { moveX: 0, moveY: 0, lookX: 0, lookY: 0 }
+  const wallAhead = probeWall(state, 2.5)
+
+  if (!enemy || enemyDist > BOT_DETECTION_RANGE) {
+    // ── WANDER ──
+    if (ai.wanderTimer <= 0) {
+      ai.wanderTimer   = 1.0 + Math.random() * 2.0
+      ai.wanderTurnDir = Math.random() < 0.5 ? -1 : 1
+      ai.wanderTurnAmt = 0.2 + Math.random() * 0.5
+    }
+    inp.moveY = wallAhead ? 0.2 : 0.7
+    inp.lookX = wallAhead ? ai.wanderTurnDir : ai.wanderTurnAmt * ai.wanderTurnDir
+  } else if (enemyDist > BOT_ENGAGE_RANGE) {
+    // ── HUNT ──
+    const targetYaw = Math.atan2(enemy.dx, enemy.dz)
+    const angleDiff = wrapAngle(targetYaw - state.yaw)
+    inp.lookX = Math.sign(angleDiff) * Math.min(1, Math.abs(angleDiff) / 0.4)
+    inp.moveY = wallAhead ? 0.2 : 0.85
+  } else {
+    // ── ENGAGE ──
+    const targetYaw = Math.atan2(enemy.dx, enemy.dz)
+    const angleDiff = wrapAngle(targetYaw - state.yaw)
+    inp.lookX = Math.sign(angleDiff) * Math.min(1, Math.abs(angleDiff) / 0.25)
+    inp.moveY = 0.25
+    inp.moveX = Math.sin(Date.now() / 600) * 0.4
+    if (Math.abs(angleDiff) < BOT_FIRE_ANGLE && ai.fireTimer <= 0) {
+      ai.fireTimer = BOT_FIRE_INTERVAL
+      spawnServerBullet(id, state)
+      io.emit('fire', { joystickId: id })
+    }
+  }
+
+  vehicleInputs.set(id, inp)
+}
+
 let lastPhysicsTime = Date.now()
 setInterval(() => {
   const now = Date.now()
   const dt  = Math.min((now - lastPhysicsTime) / 1000, 0.05)
   lastPhysicsTime = now
+
+  // Update hit cooldowns
+  for (const [id, cd] of hitCooldowns)
+    if (cd > 0) hitCooldowns.set(id, cd - dt)
+
+  // Run bot AI
+  for (const id of bots) updateBotAI(id, dt)
 
   const updates = []
   for (const [id, state] of vehicleStates) {
@@ -311,6 +453,35 @@ setInterval(() => {
     updates.push({ joystickId: id, x: state.x, y: state.y, z: state.z, yaw: state.yaw })
   }
   if (updates.length > 0) io.emit('vehicle-states', updates)
+
+  // Simulate server bullets & hit detection
+  for (let i = serverBullets.length - 1; i >= 0; i--) {
+    const b = serverBullets[i]
+    b.x += b.vx * BULLET_SPEED_SRV * dt
+    b.z += b.vz * BULLET_SPEED_SRV * dt
+    b.age += dt
+    const W = GRID * CELL
+    b.x = ((b.x + HALF) % W + W) % W - HALF
+    b.z = ((b.z + HALF) % W + W) % W - HALF
+    if (b.age > BULLET_LIFETIME || Math.abs(b.y) > HALF_Y || bulletHitsWorldSrv(b)) {
+      serverBullets.splice(i, 1); continue
+    }
+    const ownerTeam = vehicleTeams.get(b.ownerId)
+    let hit = false
+    for (const [vid, vs] of vehicleStates) {
+      if (vehicleTeams.get(vid) === ownerTeam) continue
+      if ((hitCooldowns.get(vid) ?? 0) > 0) continue
+      const dx = b.x - vs.x, dy = b.y - vs.y, dz = b.z - vs.z
+      if (dx * dx + dy * dy + dz * dz < HIT_RADIUS * HIT_RADIUS) {
+        score[ownerTeam]++
+        hitCooldowns.set(vid, HIT_INVINCIBILITY)
+        io.emit('score-update', { ...score })
+        io.emit('hit', { shooterId: b.ownerId, targetId: vid })
+        serverBullets.splice(i, 1); hit = true; break
+      }
+    }
+    if (hit) continue
+  }
 }, 16)
 
 // ─── Socket.IO ────────────────────────────────────────────────────────────────
@@ -323,10 +494,15 @@ io.on('connection', (socket) => {
   socket.on('register-joystick', () => {
     if (joystickMap.has(socket.id)) return
     const id = nextNumber()
+    const blueCount = [...vehicleTeams.values()].filter(t => t === TEAMS.BLUE).length
+    const redCount  = [...vehicleTeams.values()].filter(t => t === TEAMS.RED).length
+    const team = blueCount <= redCount ? TEAMS.BLUE : TEAMS.RED
     joystickMap.set(socket.id, id)
+    vehicleTeams.set(id, team)
+    hitCooldowns.set(id, 0)
     vehicleStates.set(id, randomSpawnPos())
-    vehicleInputs.set(id, { moveX: 0, moveY: 0, lookX: 0, lookY: 0 })
-    socket.emit('joystick-assigned', { id })
+    vehicleInputs.set(id, { ...ZERO_INPUT })
+    socket.emit('joystick-assigned', { id, team })
     io.emit('joystick-list', joystickList())
     console.log(`[J] Joystick #${String(id).padStart(2, '0')} registered (${socket.id})`)
   })
@@ -346,6 +522,7 @@ io.on('connection', (socket) => {
   socket.on('fire', () => {
     const joystickId = joystickMap.get(socket.id)
     if (joystickId !== undefined) {
+      spawnServerBullet(joystickId, vehicleStates.get(joystickId))
       socket.broadcast.emit('fire', { joystickId })
     }
   })
@@ -357,6 +534,8 @@ io.on('connection', (socket) => {
       usedNumbers.delete(id)
       vehicleStates.delete(id)
       vehicleInputs.delete(id)
+      vehicleTeams.delete(id)
+      hitCooldowns.delete(id)
       io.emit('joystick-list', joystickList())
       console.log(`[J] Joystick #${String(id).padStart(2, '0')} disconnected`)
     }

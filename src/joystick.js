@@ -167,15 +167,10 @@ const HALF   = GRID   * CELL / 2   // 64  (XZ)
 const HALF_Y = GRID_Y * CELL / 2   // 32  (Y)
 const MM     = 192               // canvas pixels
 
-const PALETTE_CSS = [
-  '#7b8fff', '#ff6060', '#5eff82', '#cc60ff',
-  '#ffdc44', '#44f0ff', '#ff60cc', '#ff9644',
-]
-function paletteColor(id) { return PALETTE_CSS[(id - 1) % PALETTE_CSS.length] }
-
 let worldGrid      = null
 let myJoystickId   = null
 const vehiclePos   = new Map()   // id → { x, y, z, yaw }
+const vehicleTeams = new Map()   // id → 'blue'|'red'
 
 // Capture own ID when assigned
 const _origAssigned = socket.listeners('joystick-assigned')[0]
@@ -194,9 +189,15 @@ socket.on('vehicle-states', (states) => {
     vehiclePos.set(joystickId, { x, y, z, yaw })
 })
 
-socket.on('joystick-list', (ids) => {
+socket.on('joystick-list', (members) => {
+  for (const { id, team } of members) vehicleTeams.set(id, team)
   for (const id of [...vehiclePos.keys()])
-    if (!ids.includes(id)) vehiclePos.delete(id)
+    if (!members.find(m => m.id === id)) { vehiclePos.delete(id); vehicleTeams.delete(id) }
+})
+
+socket.on('score-update', ({ blue, red }) => {
+  const el = document.getElementById('minimap-score')
+  if (el) el.textContent = `Blue ${blue}  |  Red ${red}`
 })
 
 const GRID_MASK = GRID - 1   // 63
@@ -245,8 +246,8 @@ function drawMinimap() {
   for (const [id, pos] of vehiclePos) {
     const mx    = MM - ((pos.x + HALF) / (GRID * CELL)) * MM
     const mz    = ((pos.z + HALF) / (GRID * CELL)) * MM
-    const color = paletteColor(id)
-    const isOwn = id === myJoystickId
+    const teamColor = vehicleTeams.get(id) === 'blue' ? '#4a7aff' : '#ff4040'
+    const isOwn     = id === myJoystickId
     const size  = isOwn ? 5 : 3.5
 
     mmCtx.save()
@@ -260,10 +261,10 @@ function drawMinimap() {
     mmCtx.closePath()
 
     if (isOwn) {
-      mmCtx.shadowColor = color
+      mmCtx.shadowColor = teamColor
       mmCtx.shadowBlur  = 8
     }
-    mmCtx.fillStyle = color
+    mmCtx.fillStyle = isOwn ? '#ffffff' : teamColor
     mmCtx.fill()
     mmCtx.restore()
   }

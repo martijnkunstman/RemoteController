@@ -108,6 +108,27 @@
         pointer-events: none;
       }
 
+      #score-hud {
+        position: absolute;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: rgba(5, 5, 12, 0.78);
+        padding: 6px 18px;
+        border-radius: 20px;
+        font-family: 'Courier New', monospace;
+        font-size: 1.1rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        pointer-events: none;
+      }
+      .score-blue { color: #4a7aff; }
+      .score-sep  { color: #444; }
+      .score-red  { color: #ff4040; }
+
       .vehicle-label {
         position: absolute;
         font-family: 'Courier New', monospace;
@@ -141,6 +162,11 @@
     <div class="canvas-wrapper">
       <canvas id="renderCanvas" touch-action="none"></canvas>
       <div id="labels"></div>
+      <div id="score-hud">
+        <span id="score-blue" class="score-blue">BLUE 0</span>
+        <span class="score-sep">|</span>
+        <span id="score-red" class="score-red">RED 0</span>
+      </div>
     </div>
 
     <script type="module" src="/src/display.js"></script>
