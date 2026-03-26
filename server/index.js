@@ -168,11 +168,11 @@ function generateCave() {
 const worldGrid = generateCave()
 
 // ─── Voxel helpers ────────────────────────────────────────────────────────────
+const GRID_MASK = GRID - 1   // 63 — GRID is a power of 2, use bitwise AND for fast wrapping
+
 function isSolid(cx, cy, cz) {
   if (cy < 0 || cy >= GRID_Y) return true                   // Y out-of-bounds = solid ceiling/floor
-  const wx = ((cx % GRID) + GRID) % GRID                   // wrap X
-  const wz = ((cz % GRID) + GRID) % GRID                   // wrap Z
-  return worldGrid[wx + cy * GRID + wz * GRID * GRID_Y] === 1
+  return worldGrid[(cx & GRID_MASK) + cy * GRID + (cz & GRID_MASK) * GRID * GRID_Y] === 1
 }
 
 function worldToCell(wx, wy, wz) {
@@ -279,14 +279,16 @@ function joystickList() {
 }
 
 // ─── Physics loop ─────────────────────────────────────────────────────────────
+const ZERO_INPUT = { moveX: 0, moveY: 0, lookX: 0, lookY: 0 }
 let lastPhysicsTime = Date.now()
 setInterval(() => {
   const now = Date.now()
   const dt  = Math.min((now - lastPhysicsTime) / 1000, 0.05)
   lastPhysicsTime = now
 
+  const updates = []
   for (const [id, state] of vehicleStates) {
-    const inp = vehicleInputs.get(id) || { moveX: 0, moveY: 0, lookX: 0, lookY: 0 }
+    const inp = vehicleInputs.get(id) ?? ZERO_INPUT
 
     const fwdX =  Math.sin(state.yaw)
     const fwdZ =  Math.cos(state.yaw)
@@ -306,8 +308,9 @@ setInterval(() => {
 
     resolveVoxels(state)
 
-    io.emit('vehicle-state', { joystickId: id, x: state.x, y: state.y, z: state.z, yaw: state.yaw })
+    updates.push({ joystickId: id, x: state.x, y: state.y, z: state.z, yaw: state.yaw })
   }
+  if (updates.length > 0) io.emit('vehicle-states', updates)
 }, 16)
 
 // ─── Socket.IO ────────────────────────────────────────────────────────────────

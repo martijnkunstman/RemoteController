@@ -15,7 +15,8 @@ import {
   PointLight,
 } from '@babylonjs/core'
 
-const canvas = document.getElementById('renderCanvas')
+const canvas       = document.getElementById('renderCanvas')
+const cameraTarget = new Vector3()   // reused every frame, avoids per-frame allocation
 
 // My joystick ID — read from ?id=N in the URL
 const myId = parseInt(new URLSearchParams(location.search).get('id') ?? '0', 10)
@@ -58,12 +59,12 @@ const HALF_Y = GRID_Y * CELL / 2   // 32  (Y)
 
 let worldGrid = null
 
+const GRID_MASK = GRID - 1   // 63 — bitwise AND wraps faster than double-modulo
+
 function isSolid(cx, cy, cz) {
   if (!worldGrid) return false
   if (cy < 0 || cy >= GRID_Y) return true                  // Y out-of-bounds = solid ceiling/floor
-  const wx = ((cx % GRID) + GRID) % GRID                  // wrap X
-  const wz = ((cz % GRID) + GRID) % GRID                  // wrap Z
-  return worldGrid[wx + cy * GRID + wz * GRID * GRID_Y] === 1
+  return worldGrid[(cx & GRID_MASK) + cy * GRID + (cz & GRID_MASK) * GRID * GRID_Y] === 1
 }
 
 
@@ -194,13 +195,13 @@ function buildVoxelWorld(grid) {
             for (let dx = 0; dx < w; dx++)
               done[(x+dx) + (y+dy)*strideY + (z+dz)*strideZ] = 1
 
-        // Emit instances across 9 tiles
-        const cx = (x + w * 0.5) * CELL - HALF
-        const cy = (y + h * 0.5) * CELL - HALF_Y
-        const cz = (z + d * 0.5) * CELL - HALF
+        // Emit one scaled instance per tile
+        const px = (x + w * 0.5) * CELL - HALF
+        const py = (y + h * 0.5) * CELL - HALF_Y
+        const pz = (z + d * 0.5) * CELL - HALF
         for (const [ox, oz] of tileOffsets) {
           const inst = root.createInstance(`v${count++}`)
-          inst.position.set(cx + ox, cy, cz + oz)
+          inst.position.set(px + ox, py, pz + oz)
           inst.scaling.set(w * CELL, h * CELL, d * CELL)
           inst.isPickable = false
         }
@@ -213,9 +214,9 @@ function buildVoxelWorld(grid) {
 // ─── Bullet world collision ───────────────────────────────────────────────────
 function bulletHitsWorld(p) {
   if (!worldGrid) return false
-  const cx = Math.floor((p.x + HALF) / CELL)
-  const cy = Math.floor((p.y + HALF) / CELL)
-  const cz = Math.floor((p.z + HALF) / CELL)
+  const cx = Math.floor((p.x + HALF)   / CELL)
+  const cy = Math.floor((p.y + HALF_Y) / CELL)
+  const cz = Math.floor((p.z + HALF)   / CELL)
   return isSolid(cx, cy, cz)
 }
 
@@ -360,12 +361,12 @@ engine.runRenderLoop(() => {
   if (own) {
     const { state } = own
     camera.position.set(state.x, state.y, state.z)
-    const target = new Vector3(
+    cameraTarget.set(
       state.x + Math.sin(state.yaw),
       state.y,
       state.z + Math.cos(state.yaw),
     )
-    camera.setTarget(target)
+    camera.setTarget(cameraTarget)
 
     // Player light follows camera position
     playerLight.position.copyFrom(camera.position)
@@ -392,9 +393,11 @@ socket.on('joystick-list', (ids) => {
   }
 })
 
-socket.on('vehicle-state', (data) => {
-  const v = vehicles.get(data.joystickId)
-  if (v) { v.state.x = data.x; v.state.y = data.y; v.state.z = data.z; v.state.yaw = data.yaw }
+socket.on('vehicle-states', (states) => {
+  for (const data of states) {
+    const v = vehicles.get(data.joystickId)
+    if (v) { v.state.x = data.x; v.state.y = data.y; v.state.z = data.z; v.state.yaw = data.yaw }
+  }
 })
 
 socket.on('fire', (data) => {

@@ -189,8 +189,9 @@ socket.on('world', (data) => {
   worldGrid = new Uint8Array(data)
 })
 
-socket.on('vehicle-state', ({ joystickId, x, y, z, yaw }) => {
-  vehiclePos.set(joystickId, { x, y, z, yaw })
+socket.on('vehicle-states', (states) => {
+  for (const { joystickId, x, y, z, yaw } of states)
+    vehiclePos.set(joystickId, { x, y, z, yaw })
 })
 
 socket.on('joystick-list', (ids) => {
@@ -198,12 +199,12 @@ socket.on('joystick-list', (ids) => {
     if (!ids.includes(id)) vehiclePos.delete(id)
 })
 
+const GRID_MASK = GRID - 1   // 63
+
 function mmIsSolid(cx, cy, cz) {
   if (!worldGrid) return true
   if (cy < 0 || cy >= GRID_Y) return true
-  const wx = ((cx % GRID) + GRID) % GRID
-  const wz = ((cz % GRID) + GRID) % GRID
-  return worldGrid[wx + cy * GRID + wz * GRID * GRID_Y] === 1
+  return worldGrid[(cx & GRID_MASK) + cy * GRID + (cz & GRID_MASK) * GRID * GRID_Y] === 1
 }
 
 const mmCanvas = document.getElementById('minimap')
